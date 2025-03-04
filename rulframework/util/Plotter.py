@@ -271,7 +271,11 @@ class Plotter:
         plt.legend()
 
         # 保存图像
-        plt.savefig(name + title + '.png')
+        save_dir = "result_imag"  # 指定保存目录名称
+        os.makedirs(save_dir, exist_ok=True)  # 自动创建目录
+        # 拼接完整保存路径
+        save_path = os.path.join(save_dir, name + title + '.png')
+        plt.savefig(save_path)
 
         return title
 

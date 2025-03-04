@@ -1,4 +1,0 @@
-<< Performance evaluation of Bearing1_1:
-	MAE: 0.7235
-	MSE: 0.6353
-	RMSE: 0.7971

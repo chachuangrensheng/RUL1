@@ -25,7 +25,15 @@ from pytorch_tcn import TCN
 
 # nvidia-smi -l 0.2
 
-
+def set_random_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 if __name__ == '__main__':
     # use_cache = True
@@ -40,10 +48,10 @@ if __name__ == '__main__':
 
     # 获取原始数据、特征数据、阶段数据
     bearing = data_loader("Bearing1_1", 'Horizontal Vibration')
-    Plotter.raw(bearing)
+    # Plotter.raw(bearing)
     feature_extractor(bearing)
     stage_calculator(bearing)
-    Plotter.feature(bearing)
+    # Plotter.feature(bearing)
 
     # 生成训练数据
     generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
@@ -68,29 +76,19 @@ if __name__ == '__main__':
     # train_set, test_set_1 = data_set.split(0.7)
 
     # 设置随机种子的函数
-    def set_random_seed(seed):
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
-
 
     # 设置随机种子
     seed = 42
     set_random_seed(seed)
-    name = 'TCN_lstm_4_8_4'
-
-
+    name = 'TCN_lstm_2_4_16_16'
+    epochs = 150
+    batch_size = 256
 
     # 定义模型并训练
     tcn_model = TCN(
         num_inputs=1,
-        num_channels=[8, 14],
-        kernel_size=4,
+        num_channels=[2, 4, 16],
+        kernel_size=16,
         dilations=None,
         dilation_reset=None,
         dropout=0.1,
@@ -109,7 +107,7 @@ if __name__ == '__main__':
     )
 
     model = PytorchModel(tcn_model)
-    model.train(train_set, val_set, test_set, 5, batch_size=64, lr=0.001, model_name=name)
+    model.train(train_set, val_set, test_set, epochs=epochs, batch_size=batch_size, lr=0.001, model_name=name)
     Plotter.loss(model)
 
     # 做出预测并画预测结果
@@ -118,9 +116,7 @@ if __name__ == '__main__':
 
     # 预测结果评价
     evaluator = Evaluator()
-    evaluator.add(MAE(), MSE(), RMSE())
-    evaluator(test_set, result)
+    evaluator.add(MAE(), RMSE())
+    evaluator(test_set, result, name=name)
 
-    # MAE: 0.0895
-    # MSE: 0.0161
-    # RMSE: 0.1271
+

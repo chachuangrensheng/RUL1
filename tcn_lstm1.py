@@ -134,7 +134,8 @@ if __name__ == '__main__':
 
     # 参数设置
     epochs = 150
-    batch_size = 32
+    batch_size = 128
+    name = 'EnhancedLSTM'
     lr = 0.001
 
     # 定义组合模型
@@ -160,19 +161,16 @@ if __name__ == '__main__':
     pytorch_model = PytorchModel(model)
 
     # 训练流程
-    pytorch_model.train(train_set, val_set, test_set, epochs=epochs, batch_size=batch_size, lr=lr, model_name='TCN_lstm4_8')
+    pytorch_model.train(train_set, val_set, test_set, epochs=epochs, batch_size=batch_size, lr=lr,
+                        model_name=name)
 
     Plotter.loss(pytorch_model)
 
     # 做出预测并画预测结果
     result = pytorch_model.test(test_set, batch_size=batch_size)
-    Plotter.rul_end2end(test_set, result, is_scatter=False, name='TCN_lstm4_8')
+    Plotter.rul_end2end(test_set, result, is_scatter=False, name=name)
 
     # 预测结果评价
     evaluator = Evaluator()
-    evaluator.add(MAE(), MSE(), RMSE())
-    evaluator(test_set, result)
-
-    # MAE: 0.0446
-    # MSE: 0.0061
-    # RMSE: 0.0783
+    evaluator.add(MAE(), RMSE())
+    evaluator(test_set, result, name=name)

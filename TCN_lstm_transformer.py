@@ -194,12 +194,13 @@ if __name__ == '__main__':
     epochs = 150
     batch_size = 64
     lr = 0.001
+    name = 'TCN_LSTM_Transformer'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = TCN_LSTM_Transformer(
         tcn_params={
             'num_inputs': 1,
-            'num_channels': [16, 32],  # 确保最后一层与LSTM和Transformer输入匹配
+            'num_channels': [8, 14],  # 确保最后一层与LSTM和Transformer输入匹配
             'kernel_size': 4,
             'dropout': 0.1,
             'causal': True,
@@ -219,12 +220,12 @@ if __name__ == '__main__':
 
     pytorch_model = PytorchModel(model)
     pytorch_model.train(train_set, val_set, test_set, epochs=epochs, batch_size=batch_size, lr=lr,
-                        model_name='TCN_Transformer')
+                        model_name=name)
 
     Plotter.loss(pytorch_model)
     result = pytorch_model.test(test_set, batch_size=batch_size)
-    Plotter.rul_end2end(test_set, result, is_scatter=False, name='TCN_Transformer')
+    Plotter.rul_end2end(test_set, result, is_scatter=False, name=name)
 
     evaluator = Evaluator()
     evaluator.add(MAE(), MSE(), RMSE())
-    evaluator(test_set, result)
+    evaluator(test_set, result, name=name)

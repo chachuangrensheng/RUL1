@@ -4,6 +4,7 @@ from torch import nn, optim
 from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 import pandas as pd
+import os
 from rulframework.data.Dataset import Dataset
 from rulframework.model.ABCModel import ABCModel
 from rulframework.system.Logger import Logger
@@ -66,6 +67,12 @@ class PytorchModel(ABCModel):
         :param criterion: 损失函数
         :return: 无返回值
         """
+        # 创建保存模型的目录（如果不存在）
+        save_dir = "pth"  # 指定保存目录名称
+        os.makedirs(save_dir, exist_ok=True)  # 自动创建目录
+        # 拼接完整保存路径
+        save_path = os.path.join(save_dir, model_name + "best_model.pth")
+
         Logger.info('Start training model...')
 
         # 初始化损失函数
@@ -133,13 +140,13 @@ class PytorchModel(ABCModel):
                 # 保存最佳模型
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
-                    torch.save(self.model.state_dict(), model_name + "best_model.pth")
+                    torch.save(self.model.state_dict(), save_path)
                     Logger.info(f"Best model saved with validation loss: {best_val_loss:.10f}")
 
         Logger.info('Model training completed!!!')
 
         # 加载最佳模型
-        self.model.load_state_dict(torch.load(model_name + "best_model.pth"))
+        self.model.load_state_dict(torch.load(save_path))
 
         # 对训练集进行预测
         Logger.info('Start predicting on training set...')
@@ -163,7 +170,7 @@ class PytorchModel(ABCModel):
             'Train_Predictions': train_predictions.flatten(),
             'Train_Labels': train_labels.flatten()
         })
-        train_df.to_excel('TCN_train_predictions.xlsx', index=False)
+        train_df.to_excel(model_name + 'train_predictions.xlsx', index=False)
         Logger.info('Training set predictions saved to train_predictions.xlsx')
 
         # 对测试集进行预测
@@ -188,5 +195,5 @@ class PytorchModel(ABCModel):
                 'Test_Predictions': test_predictions.flatten(),
                 'Test_Labels': test_labels.flatten()
             })
-            test_df.to_excel('TCN_test_predictions.xlsx', index=False)
+            test_df.to_excel(model_name + 'test_predictions.xlsx', index=False)
             Logger.info('Test set predictions saved to test_predictions.xlsx')
