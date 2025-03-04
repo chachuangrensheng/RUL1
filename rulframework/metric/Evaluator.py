@@ -1,4 +1,5 @@
 from typing import List
+import os  # 新增导入
 
 from rulframework.data.Dataset import Dataset
 from rulframework.model.Result import Result
@@ -45,7 +46,15 @@ class Evaluator:
         for metric in self.metrics:
             e = metric(test_set, result)
             evaluation[metric.name] = e
-            string = string + f'\n\t{metric.name}: {e}'
+            string += f'\n\t{metric.name}: {e}'
+
+        # 新增文件保存逻辑
+        save_dir = 'txt'
+        os.makedirs(save_dir, exist_ok=True)  # 创建目录（如果不存在）
+        file_path = os.path.join(save_dir, f'{test_set.name}.txt')
+
+        with open(file_path, 'w') as f:
+            f.write(string)
 
         Logger.info('\n' + string)
         return evaluation

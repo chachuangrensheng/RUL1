@@ -46,7 +46,7 @@ class XJTULoader(ABCBearingLoader):
     def _register(self, root: str) -> (Dict[str, str], Dict[str, Union[DataFrame, None]]):
         file_dict = {}
         entity_dict = {}
-        for condition in ['35Hz12kN', '37.5Hz11kN', '40Hz10kN']:
+        for condition in ['35Hz12kN']:
             condition_dir = os.path.join(root, condition)
             for bearing_name in os.listdir(condition_dir):
                 file_dict[bearing_name] = os.path.join(root, condition, bearing_name)

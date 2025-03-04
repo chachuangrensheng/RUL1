@@ -2,7 +2,8 @@
 """
 @filename:TCN.py
 """
-
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from torch import nn
 import torch
 import numpy as np
@@ -30,7 +31,8 @@ if __name__ == '__main__':
     # use_cache = True
 
     # 定义 数据加载器、特征提取器、fpt计算器、eol计算器
-    data_loader = XJTULoader('D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
+    data_loader = XJTULoader(
+        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
@@ -80,6 +82,7 @@ if __name__ == '__main__':
     # 设置随机种子
     seed = 42
     set_random_seed(seed)
+    name = 'TCN_lstm_4_8_4'
 
 
 
@@ -106,18 +109,18 @@ if __name__ == '__main__':
     )
 
     model = PytorchModel(tcn_model)
-    model.train(train_set, val_set, test_set, 150, batch_size=64, lr=0.001, model_name='TCN')
+    model.train(train_set, val_set, test_set, 5, batch_size=64, lr=0.001, model_name=name)
     Plotter.loss(model)
 
     # 做出预测并画预测结果
     result = model.test(test_set)
-    Plotter.rul_end2end(test_set, result, is_scatter=False, name='TCN')
+    Plotter.rul_end2end(test_set, result, is_scatter=False, name=name)
 
     # 预测结果评价
     evaluator = Evaluator()
     evaluator.add(MAE(), MSE(), RMSE())
     evaluator(test_set, result)
 
-    MAE: 0.0895
-    MSE: 0.0161
-    RMSE: 0.1271
+    # MAE: 0.0895
+    # MSE: 0.0161
+    # RMSE: 0.1271
