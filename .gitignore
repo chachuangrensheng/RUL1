@@ -1,0 +1,8 @@
+
+*.xlsx
+*.pth
+*.pyc
+/rulframework/model/__pycache__
+*.png
+*.png
+*.png

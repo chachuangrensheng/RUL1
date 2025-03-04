@@ -17,10 +17,16 @@ if __name__ == '__main__':
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
     stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
 
-    for bearing_name in data_loader:
-        bearing = data_loader(bearing_name, columns='Horizontal Vibration')
-        # bearing = data_loader(bearing_name)
-        feature_extractor(bearing)
-        # stage_calculator.calculate_state(bearing)
-        Plotter.feature(bearing, is_staged=False)
-        Logger.info(str(bearing))
+    # for bearing_name in data_loader:
+    #     bearing = data_loader(bearing_name, columns='Horizontal Vibration')
+    #     # bearing = data_loader(bearing_name)
+    #     feature_extractor(bearing)
+    #     # stage_calculator.calculate_state(bearing)
+    #     Plotter.feature(bearing, is_staged=False)
+    #     Logger.info(str(bearing))
+
+    bearing = data_loader("Bearing1_1", 'Horizontal Vibration')
+    feature_extractor(bearing)
+    stage_calculator(bearing)
+    Plotter.feature(bearing)
+    Logger.info(str(bearing))

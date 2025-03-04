@@ -214,37 +214,65 @@ class Plotter:
 
     @staticmethod
     @postprocess
-    def rul_end2end(test_set: Dataset, result: Result, is_scatter=True, label_x='Time', label_y='RUL', name=None):
+    def rul_end2end(test_set: Dataset, result: Result, is_scatter=True, label_x='Sample Index', label_y='RUL', name=None):
         plt.figure(figsize=Plotter.__SIZE, dpi=Plotter.__DPI)
 
-        x = test_set.z.reshape(-1)
-        y = result.outputs.reshape(-1)
+        # x = test_set.z.reshape(-1)
+        # y = result.outputs.reshape(-1)
+        #
+        # # 找到第二大的值在原数组中的下标（画标准线）
+        # unique_array = np.unique(test_set.y)
+        # max_val = unique_array[-1]
+        # second_val = unique_array[-2]
+        # max_index = np.where(test_set.y == second_val)[0][0]
+        # # 绘制标准线，并添加标签
+        # plt.plot([0, x[max_index], max(x)], [max_val, max_val, 0], color='red', label='Ideal RUL')
+        #
+        # if is_scatter:
+        #     plt.scatter(x, y, label='Our proposed model', s=1)
+        # else:
+        #     # 将数据按时间排序
+        #     sorted_indices = np.argsort(x)
+        #     # 重新排列矩阵的行
+        #     x = x[sorted_indices]
+        #     y = y[sorted_indices]
+        #     plt.plot(x, y, label='Our proposed model')
+        #
+        # title = 'RUL prediction result of ' + test_set.name
+        # plt.title(title)
+        # plt.xlabel(label_x)
+        # plt.ylabel(label_y)
+        # plt.legend()
+        # # 保存图像
+        # plt.savefig(name + title + '.png')
+
+        x = np.arange(len(test_set.z))  # 样本索引
+        y = result.outputs.reshape(-1)  # 模型预测值
 
         # 找到第二大的值在原数组中的下标（画标准线）
         unique_array = np.unique(test_set.y)
         max_val = unique_array[-1]
         second_val = unique_array[-2]
         max_index = np.where(test_set.y == second_val)[0][0]
+
         # 绘制标准线，并添加标签
-        plt.plot([0, x[max_index], max(x)], [max_val, max_val, 0], color='red', label='Ideal RUL')
+        plt.plot([0, max_index, len(x)], [max_val, max_val, 0], color='red', label='Ideal RUL')
 
         if is_scatter:
-            plt.scatter(x, y, label='Our proposed model', s=1)
+            plt.scatter(x, y,  color='green', label='Our proposed model', s=1)
         else:
-            # 将数据按时间排序
-            sorted_indices = np.argsort(x)
-            # 重新排列矩阵的行
-            x = x[sorted_indices]
-            y = y[sorted_indices]
-            plt.plot(x, y, label='Our proposed model')
+            # 直接绘制折线图，不排序
+            plt.plot(x, y, color='green', label='Our proposed model')
 
         title = 'RUL prediction result of ' + test_set.name
-        plt.title(title)
+        plt.title(name + title)
         plt.xlabel(label_x)
         plt.ylabel(label_y)
         plt.legend()
+
         # 保存图像
         plt.savefig(name + title + '.png')
+
         return title
 
     @staticmethod

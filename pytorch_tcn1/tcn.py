@@ -482,7 +482,9 @@ class TCN(BaseTCN):
             ):
         super(TCN, self).__init__()
 
-        self.fc = nn.Linear(2048, 1)  # 定义全连接层
+        self.fc = nn.Linear(2048, 4)  # 定义全连接层
+        # 归一化层：对最后一个维度（4）进行归一化
+        self.norm = nn.LayerNorm(4)  # 或使用 nn.BatchNorm1d(4)
 
         if lookahead > 0:
             # Only lookahead of 0 is supported, parameter is kept for compatibility
@@ -707,6 +709,8 @@ class TCN(BaseTCN):
             x = self.activation_out( x )
         if self.input_shape == 'NLC':
             x = x.transpose(1, 2)
-        x = x.flatten(start_dim=1)
+        # x = x.flatten(start_dim=2)
         x = self.fc(x)
+        # x = self.norm(x)  # 归一化，保持形状不变
+
         return x

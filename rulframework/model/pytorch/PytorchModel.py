@@ -2,7 +2,8 @@ import torch
 from numpy import ndarray
 from torch import nn, optim
 from torch.utils.data import TensorDataset, DataLoader
-
+import numpy as np
+import pandas as pd
 from rulframework.data.Dataset import Dataset
 from rulframework.model.ABCModel import ABCModel
 from rulframework.system.Logger import Logger
@@ -50,21 +51,23 @@ class PytorchModel(ABCModel):
             output = self.model(input_data)
         return output.cpu().numpy()
 
-    def train(self, train_set: Dataset, epochs=100,
+    def train(self, train_set: Dataset, val_set: Dataset = None, test_set: Dataset = None, epochs=100,
               batch_size=128, weight_decay=0, lr=0.001,
-              criterion=None, optimizer=None):
+              criterion=None, optimizer=None, model_name=None):
         """
         训练模型
-        :param lr:
-        :param train_set:
+        :param train_set: 训练数据集
+        :param val_set: 验证数据集（可选）
+        :param lr: 学习率
         :param optimizer: 优化器（默认：Adam，学习率0.001）
         :param weight_decay: 正则化系数
         :param batch_size: 批量大小
         :param epochs: 迭代次数
-        :param criterion:
-        :return:无返回值
+        :param criterion: 损失函数
+        :return: 无返回值
         """
         Logger.info('Start training model...')
+
         # 初始化损失函数
         if criterion is None:
             criterion = nn.MSELoss()
@@ -73,26 +76,117 @@ class PytorchModel(ABCModel):
         if optimizer is None:
             optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)  # 添加正则化项
 
-        x = torch.tensor(train_set.x, dtype=self.dtype, device=self.device)
-        y = torch.tensor(train_set.y, dtype=self.dtype, device=self.device)
+        # 准备训练数据
+        x_train = torch.tensor(train_set.x, dtype=self.dtype, device=self.device)
+        y_train = torch.tensor(train_set.y, dtype=self.dtype, device=self.device)
         if isinstance(criterion, nn.CrossEntropyLoss):
-            y = y.squeeze().to(dtype=torch.long)
-        train_loader = DataLoader(TensorDataset(x, y), batch_size=batch_size, shuffle=True)
+            y_train = y_train.squeeze().to(dtype=torch.long)
+        train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=False)
+
+        # 准备验证数据（如果有）
+        if val_set is not None:
+            x_val = torch.tensor(val_set.x, dtype=self.dtype, device=self.device)
+            y_val = torch.tensor(val_set.y, dtype=self.dtype, device=self.device)
+            if isinstance(criterion, nn.CrossEntropyLoss):
+                y_val = y_val.squeeze().to(dtype=torch.long)
+            val_loader = DataLoader(TensorDataset(x_val, y_val), batch_size=batch_size, shuffle=False)
+            best_val_loss = float('inf')  # 初始化最佳验证损失为无穷大
+
+        # 准备测试数据（如果有）
+        if test_set is not None:
+            x_test = torch.tensor(test_set.x, dtype=self.dtype, device=self.device)
+            y_test = torch.tensor(test_set.y, dtype=self.dtype, device=self.device)
+            if isinstance(criterion, nn.CrossEntropyLoss):
+                y_test = y_test.squeeze().to(dtype=torch.long)
+            test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=batch_size, shuffle=False)
 
         for epoch in range(epochs):
             self.model.train()  # 设置模型为训练模式
             total_loss = 0.0
+
+            # 训练过程
             for inputs, labels in train_loader:
                 optimizer.zero_grad()  # 梯度清零
                 outputs = self.model(inputs)
                 loss = criterion(outputs, labels)
                 loss.backward()  # 反向传播
                 optimizer.step()  # 更新权重
-
                 total_loss += loss.item()
 
-            avg_loss = total_loss / len(train_loader)
-            self.train_losses.append(avg_loss)  # 保存训练损失
+            avg_train_loss = total_loss / len(train_loader)
+            self.train_losses.append(avg_train_loss)  # 保存训练损失
+            Logger.debug(f"Epoch {epoch + 1}/{epochs}, Training Loss: {avg_train_loss:.10f}")
 
-            Logger.debug(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.10f}")
+            # 验证过程（如果有验证集）
+            if val_set is not None:
+                self.model.eval()  # 设置模型为评估模式
+                val_loss = 0.0
+                with torch.no_grad():
+                    for inputs, labels in val_loader:
+                        outputs = self.model(inputs)
+                        loss = criterion(outputs, labels)
+                        val_loss += loss.item()
+
+                avg_val_loss = val_loss / len(val_loader)
+                Logger.debug(f"Epoch {epoch + 1}/{epochs}, Validation Loss: {avg_val_loss:.10f}")
+
+                # 保存最佳模型
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    torch.save(self.model.state_dict(), model_name + "best_model.pth")
+                    Logger.info(f"Best model saved with validation loss: {best_val_loss:.10f}")
+
         Logger.info('Model training completed!!!')
+
+        # 加载最佳模型
+        self.model.load_state_dict(torch.load(model_name + "best_model.pth"))
+
+        # 对训练集进行预测
+        Logger.info('Start predicting on training set...')
+        self.model.eval()
+        train_predictions = []
+        train_labels = []
+        train_loss_sum = 0.0
+        with torch.no_grad():
+            for inputs, labels in train_loader:
+                outputs = self.model(inputs)
+                loss = criterion(outputs, labels)
+                train_loss_sum += loss.item()
+                train_predictions.append(outputs.cpu().numpy())
+                train_labels.append(labels.cpu().numpy())
+        train_predictions = np.vstack(train_predictions)
+        train_labels = np.vstack(train_labels)
+        Logger.info(f"Training set loss: {train_loss_sum / len(train_loader):.10f}")
+
+        # 保存训练集预测结果到 .xlsx 文件
+        train_df = pd.DataFrame({
+            'Train_Predictions': train_predictions.flatten(),
+            'Train_Labels': train_labels.flatten()
+        })
+        train_df.to_excel('TCN_train_predictions.xlsx', index=False)
+        Logger.info('Training set predictions saved to train_predictions.xlsx')
+
+        # 对测试集进行预测
+        if test_set is not None:
+            Logger.info('Start predicting on test set...')
+            test_predictions = []
+            test_labels = []
+            test_loss_sum = 0.0
+            with torch.no_grad():
+                for inputs, labels in test_loader:
+                    outputs = self.model(inputs)
+                    loss = criterion(outputs, labels)
+                    test_loss_sum += loss.item()
+                    test_predictions.append(outputs.cpu().numpy())
+                    test_labels.append(labels.cpu().numpy())
+            test_predictions = np.vstack(test_predictions)
+            test_labels = np.vstack(test_labels)
+            Logger.info(f"Test set loss: {test_loss_sum / len(test_loader):.10f}")
+
+            # 保存测试集预测结果到 .xlsx 文件
+            test_df = pd.DataFrame({
+                'Test_Predictions': test_predictions.flatten(),
+                'Test_Labels': test_labels.flatten()
+            })
+            test_df.to_excel('TCN_test_predictions.xlsx', index=False)
+            Logger.info('Test set predictions saved to test_predictions.xlsx')
