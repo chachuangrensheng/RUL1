@@ -48,7 +48,8 @@ class TCN_LSTM(nn.Module):
             activation=activation,
             kernel_initializer=kernel_initializer,
             use_skip_connections=use_skip_connections,
-            output_projection=None  # 移除TCN的输出投影层
+            output_projection=None,  # 移除TCN的输出投影层
+            # use_gate = True
         )
 
         # LSTM层
@@ -138,13 +139,13 @@ if __name__ == '__main__':
     epochs = 150
     batch_size = 128
     lr = 0.001
-    name = 'TCN_lstm_2_4_128'
+    name = 'TCN_lstm_4_8_64_128'
 
     # 定义组合模型
     model = TCN_LSTM(
         tcn_params={
             'num_inputs': 1,
-            'num_channels': [2, 4],
+            'num_channels': [4,8,64],
             'kernel_size': 128,
             'dropout': 0.1,
             'causal': True,
@@ -153,7 +154,7 @@ if __name__ == '__main__':
             'kernel_initializer': 'xavier_uniform',
             'use_skip_connections': True
         },
-        lstm_input_size=4,  # 匹配TCN最后一层输出通道数
+        lstm_input_size=64,  # 匹配TCN最后一层输出通道数
         lstm_hidden_size=64,
         lstm_num_layers=2,
         output_size=1

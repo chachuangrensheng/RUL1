@@ -1,4 +1,6 @@
 # -*- coding:UTF-8 -*-
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import torch
 import torch.nn as nn
 import numpy as np
@@ -83,20 +85,21 @@ class PositionalEncoding(nn.Module):
 class AttentionFusion(nn.Module):
     def __init__(self, lstm_dim, transformer_dim):
         super().__init__()
+        # 修改key和value的投影维度与query一致
         self.query = nn.Linear(lstm_dim, lstm_dim)
-        self.key = nn.Linear(transformer_dim, transformer_dim)
-        self.value = nn.Linear(transformer_dim, transformer_dim)
-        self.scale = torch.sqrt(torch.FloatTensor([transformer_dim])).to(device)
+        self.key = nn.Linear(transformer_dim, lstm_dim)  # 投影到LSTM维度
+        self.value = nn.Linear(transformer_dim, lstm_dim)
+        self.scale = torch.sqrt(torch.FloatTensor([lstm_dim])).to(device)
 
     def forward(self, lstm_features, transformer_features):
-        Q = self.query(lstm_features)
-        K = self.key(transformer_features)
-        V = self.value(transformer_features)
+        Q = self.query(lstm_features)       # (batch, 1, lstm_dim)
+        K = self.key(transformer_features)  # (batch, 1, lstm_dim)
+        V = self.value(transformer_features)# (batch, 1, lstm_dim)
 
         attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
         attention_weights = torch.softmax(attention_scores, dim=-1)
         fused_features = torch.matmul(attention_weights, V)
-        return fused_features.squeeze(1)
+        return fused_features.squeeze(1)  # (batch, lstm_dim)
 
 
 class TCN_LSTM_Transformer(nn.Module):
@@ -142,8 +145,8 @@ class TCN_LSTM_Transformer(nn.Module):
         # 注意力融合层
         self.attention_fusion = AttentionFusion(lstm_hidden_size, d_model)
 
-        # 输出层
-        self.fc = nn.Linear(lstm_hidden_size + d_model, 1)
+        # 修正后的输出层
+        self.fc = nn.Linear(lstm_hidden_size * 2, 1)  # 输入维度调整为128
 
     def forward(self, x):
         # TCN特征提取
@@ -161,10 +164,12 @@ class TCN_LSTM_Transformer(nn.Module):
         transformer_features = transformer_out[:, -1, :]  # (batch, d_model)
 
         # 注意力融合
-        fused_features = self.attention_fusion(lstm_features.unsqueeze(1),
-                                               transformer_features.unsqueeze(1))
+        fused_features = self.attention_fusion(
+            lstm_features.unsqueeze(1),
+            transformer_features.unsqueeze(1)
+        )
 
-        # 组合特征并预测
+        # 拼接特征（维度应为 batch x (64 + 64) = 128）
         combined = torch.cat([lstm_features, fused_features], dim=1)
         output = self.fc(combined)
         return output
@@ -172,8 +177,10 @@ class TCN_LSTM_Transformer(nn.Module):
 
 # 其他代码保持不变，替换模型实例化部分：
 if __name__ == '__main__':
+    # 定义 数据加载器、特征提取器、fpt计算器、eol计算器
     data_loader = XJTULoader(
-        'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
+        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
@@ -192,7 +199,7 @@ if __name__ == '__main__':
     set_random_seed(seed)
 
     epochs = 150
-    batch_size = 64
+    batch_size = 128
     lr = 0.001
     name = 'TCN_LSTM_Transformer'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -200,8 +207,8 @@ if __name__ == '__main__':
     model = TCN_LSTM_Transformer(
         tcn_params={
             'num_inputs': 1,
-            'num_channels': [8, 14],  # 确保最后一层与LSTM和Transformer输入匹配
-            'kernel_size': 4,
+            'num_channels': [2, 8],  # 确保最后一层与LSTM和Transformer输入匹配
+            'kernel_size': 128,
             'dropout': 0.1,
             'causal': True,
             'use_norm': 'weight_norm',
@@ -209,9 +216,9 @@ if __name__ == '__main__':
             'kernel_initializer': 'xavier_uniform',
             'use_skip_connections': True
         },
-        lstm_hidden_size=32,
+        lstm_hidden_size=128,
         lstm_num_layers=2,
-        d_model=32,  # 需与TCN最后一层通道数一致
+        d_model=8,  # 与TCN最后一层通道数一致
         nhead=8,
         num_encoder_layers=3,
         dim_feedforward=256,
@@ -227,5 +234,5 @@ if __name__ == '__main__':
     Plotter.rul_end2end(test_set, result, is_scatter=False, name=name)
 
     evaluator = Evaluator()
-    evaluator.add(MAE(), MSE(), RMSE())
+    evaluator.add(MAE(), RMSE())
     evaluator(test_set, result, name=name)

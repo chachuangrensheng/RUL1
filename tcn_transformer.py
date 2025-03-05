@@ -1,4 +1,6 @@
 # -*- coding:UTF-8 -*-
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import torch
 import torch.nn as nn
 import numpy as np
@@ -120,8 +122,10 @@ def set_random_seed(seed):
 
 
 if __name__ == '__main__':
+    # 定义 数据加载器、特征提取器、fpt计算器、eol计算器
     data_loader = XJTULoader(
-        'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
+        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
@@ -139,16 +143,18 @@ if __name__ == '__main__':
     seed = 42
     set_random_seed(seed)
 
+    # 参数设置
     epochs = 150
-    batch_size = 64
+    batch_size = 128
     lr = 0.001
+    name = 'TCN_transformer_2_8_128'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = TCN_Transformer(
         tcn_params={
             'num_inputs': 1,
-            'num_channels': [8, 14],
-            'kernel_size': 4,
+            'num_channels': [2, 8],
+            'kernel_size': 128,
             'dropout': 0.1,
             'causal': True,
             'use_norm': 'weight_norm',
@@ -156,7 +162,7 @@ if __name__ == '__main__':
             'kernel_initializer': 'xavier_uniform',
             'use_skip_connections': True
         },
-        input_size=14,
+        input_size=8,
         output_len=1,
         d_model=64,
         nhead=8,
@@ -167,18 +173,20 @@ if __name__ == '__main__':
         device=device
     ).to(device)
 
+    # 将模型包装为PytorchModel
     pytorch_model = PytorchModel(model)
+
+    # 训练流程
     pytorch_model.train(train_set, val_set, test_set, epochs=epochs, batch_size=batch_size, lr=lr,
-                        model_name='TCN_Transformer')
+                        model_name=name)
 
     Plotter.loss(pytorch_model)
+
+    # 做出预测并画预测结果
     result = pytorch_model.test(test_set, batch_size=batch_size)
-    Plotter.rul_end2end(test_set, result, is_scatter=False, name='TCN_Transformer')
+    Plotter.rul_end2end(test_set, result, is_scatter=False, name=name)
 
+    # 预测结果评价
     evaluator = Evaluator()
-    evaluator.add(MAE(), MSE(), RMSE())
-    evaluator(test_set, result)
-
-    # MAE: 0.0501
-    # MSE: 0.0049
-    # RMSE: 0.0702
+    evaluator.add(MAE(), RMSE())
+    evaluator(test_set, result, name=name)
