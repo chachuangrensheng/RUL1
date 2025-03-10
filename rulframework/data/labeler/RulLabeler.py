@@ -38,6 +38,10 @@ class RulLabeler(ABCLabeler):
         else:
             raw_data = bearing.raw_data.values
 
+        total_length = len(raw_data)
+        truncate_length = (total_length // self.interval) * self.interval
+        raw_data = raw_data[:truncate_length]
+
         x = raw_data.reshape(-1, self.interval)
 
         if self.is_rectified:

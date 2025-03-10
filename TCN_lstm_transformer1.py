@@ -1,6 +1,8 @@
 # -*- coding:UTF-8 -*-
 import os
 
+
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import torch
 import torch.nn as nn
@@ -8,8 +10,10 @@ import numpy as np
 import random
 from rulframework.data.FeatureExtractor import FeatureExtractor
 from rulframework.data.loader.bearing.XJTULoader import XJTULoader
+from rulframework.data.loader.bearing.PHM2012Loader import PHM2012Loader
 from rulframework.data.labeler.RulLabeler import RulLabeler
 from rulframework.data.processor.RMSProcessor import RMSProcessor
+from rulframework.data.processor.KurtosisProcessor import KurtosisProcessor
 from rulframework.model.pytorch.PytorchModel import PytorchModel
 from rulframework.data.stage.BearingStageCalculator import BearingStageCalculator
 from rulframework.data.stage.eol.NinetyThreePercentRMSEoLCalculator import NinetyThreePercentRMSEoLCalculator
@@ -155,16 +159,20 @@ def set_random_seed(seed):
 
 if __name__ == '__main__':
     # 数据准备
-    data_loader = XJTULoader(
-        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
-
+    # data_loader = XJTULoader(
+    #     'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+    data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
+    # feature_extractor = FeatureExtractor(KurtosisProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
     stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
-    bearing = data_loader("Bearing1_5", 'Horizontal Vibration')
+    bearing = data_loader("Bearing1_7", columns='Horizontal Vibration')
+    Plotter.raw(bearing)
     feature_extractor(bearing)
     stage_calculator(bearing)
+    Plotter.feature(bearing)
+
     generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
     data_set = generator(bearing)
     train_set, test_set = data_set.split(0.7)
@@ -194,7 +202,7 @@ if __name__ == '__main__':
     epochs = 150
     batch_size = 256
     lr = 0.001
-    name = 'TCN_lstm_transformer_2_8_128'
+    name = 'TCN_lstm_transformer_2_8_128phm'
 
     # 训练流程
     pytorch_model.train(train_set, val_set, test_set,
