@@ -139,13 +139,13 @@ if __name__ == '__main__':
     epochs = 150
     batch_size = 128
     lr = 0.001
-    name = 'TCN_lstm_4_8_64_128'
+    name = 'TCN_lstm_2_8_128'
 
     # 定义组合模型
     model = TCN_LSTM(
         tcn_params={
             'num_inputs': 1,
-            'num_channels': [4,8,64],
+            'num_channels': [2,8],
             'kernel_size': 128,
             'dropout': 0.1,
             'causal': True,
@@ -154,7 +154,7 @@ if __name__ == '__main__':
             'kernel_initializer': 'xavier_uniform',
             'use_skip_connections': True
         },
-        lstm_input_size=64,  # 匹配TCN最后一层输出通道数
+        lstm_input_size=8,  # 匹配TCN最后一层输出通道数
         lstm_hidden_size=64,
         lstm_num_layers=2,
         output_size=1
