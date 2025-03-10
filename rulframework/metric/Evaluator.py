@@ -42,7 +42,7 @@ class Evaluator:
             raise Exception(f'测试样本量：{sample_num}与测试结果数量：{result.outputs.shape[0]} 不匹配')
 
         evaluation = {}
-        string = f'Performance evaluation of {name}:'
+        string = f'Performance evaluation of {name + test_set.name}:'
         for metric in self.metrics:
             e = metric(test_set, result)
             evaluation[metric.name] = e
@@ -51,7 +51,7 @@ class Evaluator:
         # 新增文件保存逻辑
         save_dir = 'txt'
         os.makedirs(save_dir, exist_ok=True)  # 创建目录（如果不存在）
-        file_path = os.path.join(save_dir, f'{name}.txt')
+        file_path = os.path.join(save_dir, f'{name + test_set.name}.txt')
 
         with open(file_path, 'w') as f:
             f.write(string)

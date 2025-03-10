@@ -20,6 +20,7 @@ from rulframework.metric.end2end.RMSE import RMSE
 from rulframework.util.Plotter import Plotter
 from pytorch_tcn1 import TCN
 
+# nvidia-smi -l 0.2
 
 class TransformerMain(nn.Module):
     def __init__(self, input_size, output_len, d_model, nhead, num_encoder_layers, dim_feedforward, dropout, batch_size,
@@ -89,7 +90,8 @@ class TCN_Transformer(nn.Module):
             activation=tcn_params['activation'],
             kernel_initializer=tcn_params['kernel_initializer'],
             use_skip_connections=tcn_params['use_skip_connections'],
-            output_projection=None
+            output_projection=None,
+            # use_gate = True,  # 启用门控
         )
         self.transformer = TransformerMain(
             input_size=input_size,
@@ -131,7 +133,7 @@ if __name__ == '__main__':
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
     stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
 
-    bearing = data_loader("Bearing1_1", 'Horizontal Vibration')
+    bearing = data_loader("Bearing1_5", 'Horizontal Vibration')
     feature_extractor(bearing)
     stage_calculator(bearing)
 
@@ -145,16 +147,16 @@ if __name__ == '__main__':
 
     # 参数设置
     epochs = 150
-    batch_size = 128
+    batch_size = 256
     lr = 0.001
-    name = 'TCN_transformer_2_8_128'
+    name = 'TCN_transformer_2_8_32'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = TCN_Transformer(
         tcn_params={
             'num_inputs': 1,
             'num_channels': [2, 8],
-            'kernel_size': 128,
+            'kernel_size': 32,
             'dropout': 0.1,
             'causal': True,
             'use_norm': 'weight_norm',

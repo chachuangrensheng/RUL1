@@ -49,7 +49,7 @@ class TCN_LSTM(nn.Module):
             kernel_initializer=kernel_initializer,
             use_skip_connections=use_skip_connections,
             output_projection=None,  # 移除TCN的输出投影层
-            # use_gate = True
+            use_gate = True
         )
 
         # LSTM层
@@ -101,7 +101,7 @@ if __name__ == '__main__':
     stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
 
     # 获取原始数据、特征数据、阶段数据
-    bearing = data_loader("Bearing1_1", 'Horizontal Vibration')
+    bearing = data_loader("Bearing1_5", 'Horizontal Vibration')
     # Plotter.raw(bearing)
     feature_extractor(bearing)
     stage_calculator(bearing)

@@ -1,0 +1,3 @@
+Performance evaluation of TCN_lstm_transformer_2_8_32+128Bearing1_1:
+	MAE: 0.0110
+	RMSE: 0.0169

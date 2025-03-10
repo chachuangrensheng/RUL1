@@ -1,0 +1,3 @@
+Performance evaluation of TCN_transformer_2_8_8:
+	MAE: 0.0261
+	RMSE: 0.0533

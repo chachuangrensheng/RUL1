@@ -1,0 +1,3 @@
+Performance evaluation of TCN_lstm_2_8_128Bearing1_4:
+	MAE: 0.0615
+	RMSE: 0.0802

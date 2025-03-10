@@ -55,7 +55,7 @@ class PytorchModel(ABCModel):
     def train(self, train_set: Dataset, val_set: Dataset = None, test_set: Dataset = None, epochs=100,
               batch_size=128, weight_decay=0, lr=0.001,
               criterion=None, optimizer=None, model_name=None,
-              patience=5, min_delta=0):
+              patience=50, min_delta=0):
         """
         训练模型
         :param train_set: 训练数据集
@@ -178,7 +178,7 @@ class PytorchModel(ABCModel):
             'Train_Predictions': train_predictions.flatten(),
             'Train_Labels': train_labels.flatten()
         })
-        train_df.to_excel(model_name + 'train_predictions.xlsx', index=False)
+        train_df.to_excel(model_name + test_set.name + 'train_predictions.xlsx', index=False)
         Logger.info('Training set predictions saved to train_predictions.xlsx')
 
         # 对测试集进行预测
@@ -203,5 +203,5 @@ class PytorchModel(ABCModel):
                 'Test_Predictions': test_predictions.flatten(),
                 'Test_Labels': test_labels.flatten()
             })
-            test_df.to_excel(model_name + 'test_predictions.xlsx', index=False)
+            test_df.to_excel(model_name + test_set.name + 'test_predictions.xlsx', index=False)
             Logger.info('Test set predictions saved to test_predictions.xlsx')

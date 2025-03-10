@@ -1,0 +1,3 @@
+Performance evaluation of TCN1_LSTM_2_8_32:
+	MAE: 0.0366
+	RMSE: 0.0541
