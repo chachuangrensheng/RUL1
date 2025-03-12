@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from numpy.typing import ArrayLike
 import numpy as np
-from torch.nn.init import xavier_uniform_
 
 # Try to import new weight_norm from torch.nn.utils.parametrizations
 # But also keep the deprecated version for compatibility
@@ -26,6 +25,48 @@ from collections.abc import Iterable
 from pytorch_tcn.conv import TemporalConv1d, TemporalConvTranspose1d
 
 
+class SparseSelfAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads, sparse_window, causal=True):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.sparse_window = sparse_window
+        self.causal = causal
+        self.query = nn.Linear(embed_dim, embed_dim)
+        self.key = nn.Linear(embed_dim, embed_dim)
+        self.value = nn.Linear(embed_dim, embed_dim)
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+
+    def forward(self, x):
+        batch_size, seq_len, _ = x.size()
+        q = self.query(x)
+        k = self.key(x)
+        v = self.value(x)
+
+        q = q.view(batch_size, seq_len, self.num_heads, self.embed_dim // self.num_heads).transpose(1, 2)
+        k = k.view(batch_size, seq_len, self.num_heads, self.embed_dim // self.num_heads).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.num_heads, self.embed_dim // self.num_heads).transpose(1, 2)
+
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / (self.embed_dim ** 0.5)
+
+        mask = torch.zeros_like(attn_scores, dtype=torch.bool)
+        for i in range(seq_len):
+            if self.causal:
+                start = max(0, i - self.sparse_window + 1)
+                end = i + 1
+            else:
+                start = max(0, i - self.sparse_window // 2)
+                end = min(seq_len, i + self.sparse_window // 2 + 1)
+            mask[:, :, i, start:end] = True
+
+        attn_scores = attn_scores.masked_fill(~mask, float('-inf'))
+        attn_weights = F.softmax(attn_scores, dim=-1)
+
+        output = torch.matmul(attn_weights, v)
+        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.embed_dim)
+        output = self.out_proj(output)
+        return output
+
 activation_fn = dict(
     relu=nn.ReLU,
     tanh=nn.Tanh,
@@ -46,61 +87,6 @@ kernel_init_fn = dict(
     normal=nn.init.normal_,
     uniform=nn.init.uniform_,
 )
-
-
-# 2. 新增置换注意力模块
-class ShuffleAttention(nn.Module):
-    def __init__(self, channels, groups=4, reduction=16):
-        super(ShuffleAttention, self).__init__()
-        # 动态调整分组确保通道整除
-        self.groups = max(1, min(groups, channels))
-        while channels % self.groups != 0:
-            self.groups -= 1
-
-        # 计算有效中间通道
-        self.group_channels = channels // self.groups
-        mid_reduction = max(reduction, self.groups)
-        mid_channels = max(channels // mid_reduction, self.groups)
-        mid_channels = (mid_channels // self.groups) * self.groups
-
-        # 空间注意力分支（关键修改）
-        self.spatial_conv = nn.Sequential(
-            nn.Conv1d(
-                in_channels=channels,
-                out_channels=mid_channels,
-                kernel_size=1,
-                groups=self.groups
-            ),
-            nn.BatchNorm1d(mid_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv1d(
-                in_channels=mid_channels,
-                out_channels=channels,
-                kernel_size=1,
-                groups=self.groups
-            ),
-            nn.Sigmoid()
-        )
-
-        # 通道注意力分支
-        self.channel_attn = nn.Sequential(
-            nn.AdaptiveAvgPool1d(1),
-            nn.Conv1d(channels, max(channels // reduction, 1), 1),
-            nn.ReLU(),
-            nn.Conv1d(max(channels // reduction, 1), channels, 1),
-            nn.Sigmoid()
-        )
-
-        self.shuffle = nn.ChannelShuffle(self.groups)
-
-    def forward(self, x):
-        # 空间注意力
-        spatial_attn = self.spatial_conv(x)
-        # 通道注意力
-        channel_attn = self.channel_attn(x)
-        # 融合注意力
-        attn = spatial_attn * channel_attn
-        return self.shuffle(x * attn)
 
 def _check_activation_arg(
         activation,
@@ -264,8 +250,8 @@ class TemporalBlock(BaseTCN):
             embedding_shapes,
             embedding_mode,
             use_gate,
-            use_shuffle_attention=False,  # 新增参数
-            sa_groups=4,  # 新增参数
+            sparse_attention_heads=None,  # 新增参数
+            sparse_window=None,  # 新增参数
             ):
         super(TemporalBlock, self).__init__()
         self.use_norm = use_norm
@@ -275,29 +261,22 @@ class TemporalBlock(BaseTCN):
         self.embedding_mode = embedding_mode
         self.use_gate = use_gate
         self.causal = causal
-        self.sa_groups = sa_groups
-
 
         if self.use_gate:
             conv1d_n_outputs = 2 * n_outputs
         else:
             conv1d_n_outputs = n_outputs
 
-
-        # 添加置换注意力模块
-        self.use_shuffle_attention = use_shuffle_attention
-        if use_shuffle_attention:
-            self.shuffle_attn = ShuffleAttention(
-                channels=conv1d_n_outputs,
-                groups=sa_groups
+        # 添加稀疏注意力层
+        if sparse_attention_heads and sparse_window:
+            self.sparse_attention = SparseSelfAttention(
+                embed_dim=conv1d_n_outputs,
+                num_heads=sparse_attention_heads,
+                sparse_window=sparse_window,
+                causal=causal
             )
-            # 注意力后的归一化
-            if use_norm == 'batch_norm':
-                self.sa_norm = nn.BatchNorm1d(conv1d_n_outputs)
-            elif use_norm == 'layer_norm':
-                self.sa_norm = nn.LayerNorm(conv1d_n_outputs)
-            else:
-                self.sa_norm = None
+        else:
+            self.sparse_attention = None
 
         self.conv1 = TemporalConv1d(
             in_channels=n_inputs,
@@ -472,6 +451,12 @@ class TemporalBlock(BaseTCN):
         if embeddings is not None:
             out = self.apply_embeddings( out, embeddings )
 
+        # 添加稀疏注意力
+        if self.sparse_attention:
+            out = out.permute(0, 2, 1)  # [batch, seq, channels]
+            out = self.sparse_attention(out)
+            out = out.permute(0, 2, 1)  # [batch, channels, seq]
+
         out = self.activation1(out)
         out = self.dropout1(out)
 
@@ -481,14 +466,6 @@ class TemporalBlock(BaseTCN):
         out = self.dropout2(out)
 
         res = x if self.downsample is None else self.downsample(x)
-        # 在残差连接前应用置换注意力
-        if self.use_shuffle_attention:
-            # 确保残差连接的通道数是 sa_groups 的倍数
-            if res.shape[1] % self.sa_groups != 0:
-                raise ValueError(f"Input channels {res.shape[1]} must be divisible by sa_groups {self.sa_groups}")
-            res = self.shuffle_attn(res)
-            if self.sa_norm is not None:
-                res = self.apply_norm(self.sa_norm, res)
         return self.activation_final(out + res), out
 
 
@@ -516,21 +493,15 @@ class TCN(BaseTCN):
             lookahead=0,
             output_projection: Optional[ int ] = None,
             output_activation: Optional[ str ] = None,
-            use_shuffle_attention=False,  # 新增参数
-            sa_groups=2,  # 新增参数
+            use_sparse_attention=False,  # 新增参数
+            sparse_attention_heads=4,  # 新增参数
+            sparse_window=64,  # 新增参数
             ):
         super(TCN, self).__init__()
 
         self.fc = nn.Linear(2048, 4)  # 定义全连接层
         # 归一化层：对最后一个维度（4）进行归一化
         self.norm = nn.LayerNorm(4)  # 或使用 nn.BatchNorm1d(4)
-        # 在初始化时验证通道数
-        if use_shuffle_attention:
-            for ch in num_channels:
-                if ch % sa_groups != 0:
-                    raise ValueError(
-                        f"num_channels {ch} must be divisible by sa_groups {sa_groups}"
-                    )
 
         if lookahead > 0:
             # Only lookahead of 0 is supported, parameter is kept for compatibility
@@ -653,8 +624,8 @@ class TCN(BaseTCN):
                     embedding_shapes=self.embedding_shapes,
                     embedding_mode=self.embedding_mode,
                     use_gate=self.use_gate,
-                    use_shuffle_attention=use_shuffle_attention,
-                    sa_groups=sa_groups,
+                    sparse_attention_heads=sparse_attention_heads if use_sparse_attention else None,
+                    sparse_window=sparse_window if use_sparse_attention else None,
                     )
                 ]
 

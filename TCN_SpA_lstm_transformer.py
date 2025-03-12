@@ -18,8 +18,9 @@ from rulframework.metric.Evaluator import Evaluator
 from rulframework.metric.end2end.MAE import MAE
 from rulframework.metric.end2end.RMSE import RMSE
 from rulframework.util.Plotter import Plotter
-from pytorch_tcn_sa import TCN
+from pytorch_tcn_spa import TCN
 
+# nvidia-smi -l 0.2
 
 class SharedTCN(nn.Module):
     def __init__(self, tcn_params):
@@ -34,8 +35,9 @@ class SharedTCN(nn.Module):
             activation=tcn_params['activation'],
             kernel_initializer=tcn_params['kernel_initializer'],
             use_skip_connections=tcn_params['use_skip_connections'],
-            use_shuffle_attention=tcn_params['use_shuffle_attention'],
-            sa_groups=tcn_params['sa_groups'],
+            use_sparse_attention=tcn_params['use_sparse_attention'],
+            sparse_attention_heads=tcn_params['sparse_attention_heads'],
+            sparse_window=tcn_params['sparse_window'],
             output_projection=None,
             use_gate=True
         )
@@ -186,8 +188,10 @@ if __name__ == '__main__':
         'activation': 'relu',
         'kernel_initializer': 'xavier_uniform',
         'use_skip_connections': True,
-        'use_shuffle_attention': True,  # 启用置换注意力
-        'sa_groups': 2,
+        'use_sparse_attention': True,  # 启用稀疏注意力
+        'sparse_attention_heads': 4,
+        'sparse_window': 128
+
     }
 
     # 创建融合模型
@@ -198,7 +202,7 @@ if __name__ == '__main__':
     epochs = 150
     batch_size = 16
     lr = 0.001
-    name = 'TCN_SA_lstm_transformer_2_8_128'
+    name = 'TCN_sa_lstm_transformer_2_8_128'
 
     # 训练流程
     pytorch_model.train(train_set, val_set, test_set,

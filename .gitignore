@@ -5,3 +5,6 @@
 /rulframework/model/__pycache__
 
 *.xml
+/excel_result
+*.xlsx
+*.xlsx

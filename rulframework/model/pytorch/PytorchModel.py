@@ -55,7 +55,7 @@ class PytorchModel(ABCModel):
     def train(self, train_set: Dataset, val_set: Dataset = None, test_set: Dataset = None, epochs=100,
               batch_size=128, weight_decay=0, lr=0.001,
               criterion=None, optimizer=None, model_name=None,
-              patience=50, min_delta=0):
+              patience=30, min_delta=0):
         """
         训练模型
         :param train_set: 训练数据集
