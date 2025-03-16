@@ -1,15 +1,17 @@
 # -*- coding:UTF-8 -*-
 import os
-
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import random
 from rulframework.data.FeatureExtractor import FeatureExtractor
 from rulframework.data.loader.bearing.XJTULoader import XJTULoader
+from rulframework.data.loader.bearing.PHM2012Loader import PHM2012Loader
 from rulframework.data.labeler.RulLabeler import RulLabeler
 from rulframework.data.processor.RMSProcessor import RMSProcessor
+from rulframework.data.processor.KurtosisProcessor import KurtosisProcessor
 from rulframework.model.pytorch.PytorchModel import PytorchModel
 from rulframework.data.stage.BearingStageCalculator import BearingStageCalculator
 from rulframework.data.stage.eol.NinetyThreePercentRMSEoLCalculator import NinetyThreePercentRMSEoLCalculator
@@ -18,9 +20,8 @@ from rulframework.metric.Evaluator import Evaluator
 from rulframework.metric.end2end.MAE import MAE
 from rulframework.metric.end2end.RMSE import RMSE
 from rulframework.util.Plotter import Plotter
-from pytorch_tcn_spa import TCN
+from pytorch_tcn1 import TCN
 
-# nvidia-smi -l 0.2
 
 class SharedTCN(nn.Module):
     def __init__(self, tcn_params):
@@ -35,9 +36,6 @@ class SharedTCN(nn.Module):
             activation=tcn_params['activation'],
             kernel_initializer=tcn_params['kernel_initializer'],
             use_skip_connections=tcn_params['use_skip_connections'],
-            use_sparse_attention=tcn_params['use_sparse_attention'],
-            sparse_attention_heads=tcn_params['sparse_attention_heads'],
-            sparse_window=tcn_params['sparse_window'],
             output_projection=None,
             use_gate=True
         )
@@ -50,30 +48,28 @@ class FeatureBranch(nn.Module):
     def __init__(self, branch_type, input_size, hidden_size):
         super(FeatureBranch, self).__init__()
         self.branch_type = branch_type
-        self.input_proj = nn.Linear(input_size, hidden_size)  # 新增维度适配层
+        self.input_proj = nn.Linear(input_size, hidden_size)
 
         if branch_type == "LSTM":
             self.model = nn.LSTM(
                 input_size=hidden_size,
                 hidden_size=hidden_size,
-                num_layers=1,  # 减少层数保持参数规模
+                num_layers=1,
                 batch_first=True
             )
         elif branch_type == "Transformer":
             self.positional_encoding = PositionalEncoding(hidden_size, 0.1)
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=hidden_size,
-                nhead=8,  # 确保hidden_size能被nhead整除
+                nhead=8,
                 dim_feedforward=128,
                 dropout=0.1,
                 batch_first=True
             )
             self.model = nn.TransformerEncoder(encoder_layer, num_layers=1)
 
-        self.proj = nn.Linear(hidden_size, hidden_size)
-
     def forward(self, x):
-        x = self.input_proj(x)  # 维度转换
+        x = self.input_proj(x)
         if self.branch_type == "LSTM":
             out, _ = self.model(x)
             return out[:, -1, :]
@@ -83,15 +79,68 @@ class FeatureBranch(nn.Module):
             return out[:, -1, :]
 
 
-class FusionModel(nn.Module):
-    def __init__(self, tcn_params, hidden_size=32):  # 调整hidden_size为32
-        super(FusionModel, self).__init__()
-        # 共享TCN
-        self.tcn = SharedTCN(tcn_params)
+class CrossAttention(nn.Module):
+    """增强版交叉注意力机制"""
 
-        # 获取TCN最终输出通道数
+    def __init__(self, proj_dim=64, num_heads=4):
+        super().__init__()
+        self.num_heads = num_heads
+        self.head_dim = proj_dim // num_heads
+
+        # 双向注意力机制
+        self.q_proj_lstm = nn.Linear(proj_dim, proj_dim)
+        self.kv_proj_trans = nn.Linear(proj_dim, proj_dim * 2)
+
+        self.q_proj_trans = nn.Linear(proj_dim, proj_dim)
+        self.kv_proj_lstm = nn.Linear(proj_dim, proj_dim * 2)
+
+        self.scale = self.head_dim ** -0.5
+        self.out_proj = nn.Linear(proj_dim * 2, proj_dim)
+
+    def forward(self, lstm_feat, trans_feat):
+        batch_size = lstm_feat.size(0)
+
+        # LSTM -> Transformer 方向
+        Q_l = self.q_proj_lstm(lstm_feat).view(batch_size, self.num_heads, self.head_dim)
+        KV_t = self.kv_proj_trans(trans_feat).view(batch_size, 2, self.num_heads, self.head_dim)
+        K_t, V_t = KV_t[:, 0], KV_t[:, 1]
+
+        # Transformer -> LSTM 方向
+        Q_t = self.q_proj_trans(trans_feat).view(batch_size, self.num_heads, self.head_dim)
+        KV_l = self.kv_proj_lstm(lstm_feat).view(batch_size, 2, self.num_heads, self.head_dim)
+        K_l, V_l = KV_l[:, 0], KV_l[:, 1]
+
+        # 双向注意力计算
+        attn_l = (Q_l @ K_t.transpose(-2, -1)) * self.scale
+        attn_l = F.softmax(attn_l, dim=-1)
+        out_l = (attn_l @ V_t).transpose(1, 2).reshape(batch_size, -1)
+
+        attn_t = (Q_t @ K_l.transpose(-2, -1)) * self.scale
+        attn_t = F.softmax(attn_t, dim=-1)
+        out_t = (attn_t @ V_l).transpose(1, 2).reshape(batch_size, -1)
+
+        # 特征融合
+        combined = torch.cat([out_l, out_t], dim=1)
+        return self.out_proj(combined)
+
+
+class FusionModel(nn.Module):
+    def __init__(self, tcn_params, hidden_size=32, proj_dim=64):
+        super(FusionModel, self).__init__()
+        self.tcn = SharedTCN(tcn_params)
         tcn_out_channels = tcn_params['num_channels'][-1]
 
+        # 特征分支
+        # self.lstm_branch = nn.Sequential(
+        #     FeatureBranch("LSTM", tcn_out_channels, hidden_size),
+        #     nn.Linear(hidden_size, proj_dim),
+        #     nn.GELU()
+        # )
+        # self.trans_branch = nn.Sequential(
+        #     FeatureBranch("Transformer", tcn_out_channels, hidden_size),
+        #     nn.Linear(hidden_size, proj_dim),
+        #     nn.GELU()
+        # )
         # 两个特征分支
         self.lstm_branch = FeatureBranch("LSTM",
                                          input_size=tcn_out_channels,
@@ -101,30 +150,36 @@ class FusionModel(nn.Module):
                                           input_size=tcn_out_channels,
                                           hidden_size=hidden_size)
 
-        # 注意力机制
-        self.attention = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, 2),
-            nn.Softmax(dim=1)
+        # 交叉注意力机制
+        self.cross_attn = CrossAttention(proj_dim)
+
+        # 残差连接层
+        self.residual = nn.Sequential(
+            nn.Linear(proj_dim * 2, proj_dim),
+            nn.LayerNorm(proj_dim)
         )
 
-        # 最终输出层
-        self.fc = nn.Linear(hidden_size, 1)
+        # 输出层
+        self.fc = nn.Sequential(
+            nn.Linear(proj_dim, proj_dim // 2),
+            nn.ReLU(),
+            nn.Linear(proj_dim // 2, 1)
+        )
 
     def forward(self, x):
         # TCN特征提取
-        tcn_out = self.tcn(x)  # (batch, 8, seq)
-        tcn_features = tcn_out.transpose(1, 2)  # (batch, seq, 8)
+        base_feat = self.tcn(x).transpose(1, 2)  # [B, seq_len, channels]
 
-        # 分支处理
-        lstm_feat = self.lstm_branch(tcn_features)  # 投影到hidden_size
-        trans_feat = self.trans_branch(tcn_features)
+        # 分支特征提取
+        lstm_feat = self.lstm_branch(base_feat)  # [B, proj_dim]
+        trans_feat = self.trans_branch(base_feat)  # [B, proj_dim]
 
-        # 注意力融合
-        combined = torch.cat([lstm_feat, trans_feat], dim=1)
-        attn_weights = self.attention(combined)
-        fused = attn_weights[:, 0:1] * lstm_feat + attn_weights[:, 1:2] * trans_feat
+        # 交叉注意力融合
+        cross_feat = self.cross_attn(lstm_feat, trans_feat)
+
+        # 残差连接
+        residual = self.residual(torch.cat([lstm_feat, trans_feat], dim=1))
+        fused = cross_feat + residual
 
         return self.fc(fused)
 
@@ -161,14 +216,18 @@ if __name__ == '__main__':
     # 数据准备
     data_loader = XJTULoader(
         'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
-
+    # data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
+    # feature_extractor = FeatureExtractor(KurtosisProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
     stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
-    bearing = data_loader("Bearing1_1", 'Horizontal Vibration')
+    bearing = data_loader("Bearing1_1", columns='Horizontal Vibration')
+    # Plotter.raw(bearing)
     feature_extractor(bearing)
     stage_calculator(bearing)
+    # Plotter.feature(bearing)
+
     generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
     data_set = generator(bearing)
     train_set, test_set = data_set.split(0.7)
@@ -180,29 +239,27 @@ if __name__ == '__main__':
     # 配置参数
     tcn_params = {
         'num_inputs': 1,
-        'num_channels': [2, 16, 32],
+        'num_channels': [2, 8],
         'kernel_size': 128,
         'dropout': 0.1,
         'causal': True,
         'use_norm': 'weight_norm',
         'activation': 'relu',
         'kernel_initializer': 'xavier_uniform',
-        'use_skip_connections': True,
-        'use_sparse_attention': True,  # 启用稀疏注意力
-        'sparse_attention_heads': 4,
-        'sparse_window': 128
-
+        'use_skip_connections': True
     }
 
     # 创建融合模型
-    model = FusionModel(tcn_params, hidden_size=64)
+    model = FusionModel(tcn_params, hidden_size=64, proj_dim=128)
     pytorch_model = PytorchModel(model)
 
     # 训练参数
+    name = 'TCN_lstm_transformer_CA64_2_8_128'
     epochs = 150
-    batch_size = 16
+    batch_size = 256
     lr = 0.001
-    name = 'TCN_sa_lstm_transformer_2_8_128_2_128'
+    patience = 30 # 早停参数
+
 
     # 训练流程
     pytorch_model.train(train_set, val_set, test_set,
@@ -210,8 +267,7 @@ if __name__ == '__main__':
                         batch_size=batch_size,
                         lr=lr,
                         model_name=name,
-                        patience=30,
-                        )
+                        patience=patience)
 
     # 可视化与评估
     Plotter.loss(pytorch_model)
