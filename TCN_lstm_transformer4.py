@@ -131,24 +131,16 @@ class FusionModel(nn.Module):
         tcn_out_channels = tcn_params['num_channels'][-1]
 
         # 特征分支
-        # self.lstm_branch = nn.Sequential(
-        #     FeatureBranch("LSTM", tcn_out_channels, hidden_size),
-        #     nn.Linear(hidden_size, proj_dim),
-        #     nn.GELU()
-        # )
-        # self.trans_branch = nn.Sequential(
-        #     FeatureBranch("Transformer", tcn_out_channels, hidden_size),
-        #     nn.Linear(hidden_size, proj_dim),
-        #     nn.GELU()
-        # )
-        # 两个特征分支
-        self.lstm_branch = FeatureBranch("LSTM",
-                                         input_size=tcn_out_channels,
-                                         hidden_size=hidden_size)
-
-        self.trans_branch = FeatureBranch("Transformer",
-                                          input_size=tcn_out_channels,
-                                          hidden_size=hidden_size)
+        self.lstm_branch = nn.Sequential(
+            FeatureBranch("LSTM", tcn_out_channels, hidden_size),
+            nn.Linear(hidden_size, proj_dim),
+            nn.GELU()
+        )
+        self.trans_branch = nn.Sequential(
+            FeatureBranch("Transformer", tcn_out_channels, hidden_size),
+            nn.Linear(hidden_size, proj_dim),
+            nn.GELU()
+        )
 
         # 交叉注意力机制
         self.cross_attn = CrossAttention(proj_dim)
@@ -254,7 +246,7 @@ if __name__ == '__main__':
     pytorch_model = PytorchModel(model)
 
     # 训练参数
-    name = 'TCN_lstm_transformer_CA64_2_8_128'
+    name = 'TCN_lstm_transformer_CA128_2_8_128'
     epochs = 150
     batch_size = 256
     lr = 0.001

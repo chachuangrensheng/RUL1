@@ -248,15 +248,15 @@ if __name__ == '__main__':
     }
 
     # 创建融合模型
-    model = FusionModel(tcn_params, hidden_size=64, proj_dim=64)
+    model = FusionModel(tcn_params, hidden_size=64, proj_dim=128)
     pytorch_model = PytorchModel(model)
 
     # 训练参数
-    name = 'TCN_lstm_transformer_CBAM64_2_8_128'
+    name = 'TCN_lstm_transformer_CBAM128_2_8_128'
     epochs = 150
     batch_size = 256
     lr = 0.001
-    patience = 50 # 早停参数
+    patience = 30 # 早停参数
 
 
     # 训练流程

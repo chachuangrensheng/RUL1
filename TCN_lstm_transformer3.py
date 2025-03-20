@@ -136,25 +136,17 @@ class FusionModel(nn.Module):
         self.tcn = SharedTCN(tcn_params)
         tcn_out_channels = tcn_params['num_channels'][-1]
 
-        # # 特征分支（增加投影层）
-        # self.lstm_branch = nn.Sequential(
-        #     FeatureBranch("LSTM", tcn_out_channels, hidden_size),
-        #     nn.Linear(hidden_size, proj_dim),
-        #     nn.GELU()
-        # )
-        # self.trans_branch = nn.Sequential(
-        #     FeatureBranch("Transformer", tcn_out_channels, hidden_size),
-        #     nn.Linear(hidden_size, proj_dim),
-        #     nn.GELU()
-        # )
-        # 两个特征分支
-        self.lstm_branch = FeatureBranch("LSTM",
-                                         input_size=tcn_out_channels,
-                                         hidden_size=hidden_size)
-
-        self.trans_branch = FeatureBranch("Transformer",
-                                          input_size=tcn_out_channels,
-                                          hidden_size=hidden_size)
+        # 特征分支（增加投影层）
+        self.lstm_branch = nn.Sequential(
+            FeatureBranch("LSTM", tcn_out_channels, hidden_size),
+            nn.Linear(hidden_size, proj_dim),
+            nn.GELU()
+        )
+        self.trans_branch = nn.Sequential(
+            FeatureBranch("Transformer", tcn_out_channels, hidden_size),
+            nn.Linear(hidden_size, proj_dim),
+            nn.GELU()
+        )
 
         # 双重注意力机制
         self.cross_attn = CrossAttention(proj_dim, num_heads=4)

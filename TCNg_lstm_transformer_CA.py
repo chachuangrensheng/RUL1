@@ -1,11 +1,9 @@
 # -*- coding:UTF-8 -*-
 import os
-
-
-
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import random
 from rulframework.data.FeatureExtractor import FeatureExtractor
@@ -24,6 +22,40 @@ from rulframework.metric.end2end.RMSE import RMSE
 from rulframework.util.Plotter import Plotter
 from pytorch_tcn1 import TCN
 
+
+class DynamicGateAttention(nn.Module):
+    """动态门控注意力机制（TCN前使用）"""
+
+    def __init__(self, in_channels, reduction_ratio=2):
+        super().__init__()
+        # 确保通道数不为零
+        reduced_channels = max(1, in_channels // reduction_ratio)
+        self.channel_attention = nn.Sequential(
+            nn.AdaptiveAvgPool1d(1),
+            nn.Conv1d(in_channels, in_channels // reduction_ratio, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv1d(in_channels // reduction_ratio, in_channels, kernel_size=1),
+            nn.Sigmoid()
+        )
+        self.temporal_attention = nn.Sequential(
+            nn.Conv1d(in_channels, in_channels // reduction_ratio, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv1d(in_channels // reduction_ratio, in_channels, kernel_size=1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        # 通道注意力 [B, C, L] -> [B, C, 1]
+        ca = self.channel_attention(x)
+
+        # 时间注意力 [B, C, L]
+        ta = self.temporal_attention(x)
+
+        # 组合注意力
+        combined_attn = torch.sigmoid(ca + ta)
+
+        # 应用门控
+        return x * combined_attn
 
 class SharedTCN(nn.Module):
     def __init__(self, tcn_params):
@@ -50,30 +82,28 @@ class FeatureBranch(nn.Module):
     def __init__(self, branch_type, input_size, hidden_size):
         super(FeatureBranch, self).__init__()
         self.branch_type = branch_type
-        self.input_proj = nn.Linear(input_size, hidden_size)  # 新增维度适配层
+        self.input_proj = nn.Linear(input_size, hidden_size)
 
         if branch_type == "LSTM":
             self.model = nn.LSTM(
                 input_size=hidden_size,
                 hidden_size=hidden_size,
-                num_layers=1,  # 减少层数保持参数规模
+                num_layers=1,
                 batch_first=True
             )
         elif branch_type == "Transformer":
             self.positional_encoding = PositionalEncoding(hidden_size, 0.1)
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=hidden_size,
-                nhead=8,  # 确保hidden_size能被nhead整除
+                nhead=8,
                 dim_feedforward=128,
                 dropout=0.1,
                 batch_first=True
             )
             self.model = nn.TransformerEncoder(encoder_layer, num_layers=1)
 
-        self.proj = nn.Linear(hidden_size, hidden_size)
-
     def forward(self, x):
-        x = self.input_proj(x)  # 维度转换
+        x = self.input_proj(x)
         if self.branch_type == "LSTM":
             out, _ = self.model(x)
             return out[:, -1, :]
@@ -83,50 +113,91 @@ class FeatureBranch(nn.Module):
             return out[:, -1, :]
 
 
-class FusionModel(nn.Module):
-    def __init__(self, tcn_params, hidden_size=32):  # 调整hidden_size为32
-        super(FusionModel, self).__init__()
-        # 共享TCN
-        self.tcn = SharedTCN(tcn_params)
+class ChannelAttention1D(nn.Module):
+    """适用于特征融合的通道注意力"""
 
-        # 获取TCN最终输出通道数
+    def __init__(self, num_channels, reduction_ratio=2):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.max_pool = nn.AdaptiveMaxPool1d(1)
+
+        # 共享参数的MLP
+        self.mlp = nn.Sequential(
+            nn.Linear(num_channels, num_channels // reduction_ratio),
+            nn.ReLU(),
+            nn.Linear(num_channels // reduction_ratio, num_channels)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, feat1, feat2):
+        """
+        输入:
+            feat1 - [B, proj_dim]
+            feat2 - [B, proj_dim]
+        输出:
+            加权融合后的特征 [B, proj_dim]
+        """
+        # 拼接特征形成通道维度
+        combined = torch.stack([feat1, feat2], dim=1)  # [B, 2, proj_dim]
+
+        # 通道注意力计算
+        avg_out = self.mlp(self.avg_pool(combined).squeeze(-1))  # [B, 2]
+        max_out = self.mlp(self.max_pool(combined).squeeze(-1))  # [B, 2]
+        channel_weights = self.sigmoid(avg_out + max_out)  # [B, 2]
+
+        # 加权融合
+        weighted_feat = channel_weights[:, 0:1] * feat1 + channel_weights[:, 1:2] * feat2
+        return weighted_feat
+
+
+class FusionModel(nn.Module):
+    def __init__(self, tcn_params, hidden_size=32, proj_dim=64):
+        super(FusionModel, self).__init__()
+        # 输入通道验证
+        assert tcn_params['num_inputs'] > 0, "TCN输入通道数必须大于0"
+        # 添加动态门控注意力（在TCN之前）
+        self.dynamic_gate = DynamicGateAttention(
+            in_channels=tcn_params['num_inputs'],
+            reduction_ratio=2  # 使用更安全的压缩比
+        )
+        self.tcn = SharedTCN(tcn_params)
         tcn_out_channels = tcn_params['num_channels'][-1]
 
-        # 两个特征分支
-        self.lstm_branch = FeatureBranch("LSTM",
-                                         input_size=tcn_out_channels,
-                                         hidden_size=hidden_size)
-
-        self.trans_branch = FeatureBranch("Transformer",
-                                          input_size=tcn_out_channels,
-                                          hidden_size=hidden_size)
-
-        # 注意力机制
-        self.attention = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, 2),
-            nn.Softmax(dim=1)
+        # 原特征分支保持不变
+        self.lstm_branch = nn.Sequential(
+            FeatureBranch("LSTM", tcn_out_channels, hidden_size),
+            nn.Linear(hidden_size, proj_dim),
+            nn.GELU()
+        )
+        self.trans_branch = nn.Sequential(
+            FeatureBranch("Transformer", tcn_out_channels, hidden_size),
+            nn.Linear(hidden_size, proj_dim),
+            nn.GELU()
         )
 
-        # 最终输出层
-        self.fc = nn.Linear(hidden_size, 1)
+        self.channel_attn = ChannelAttention1D(num_channels=2)
+        self.fc = nn.Sequential(
+            nn.Linear(proj_dim, proj_dim // 2),
+            nn.ReLU(),
+            nn.Linear(proj_dim // 2, 1)
+        )
 
     def forward(self, x):
+        # 维度转换（关键修改）
+        if x.dim() == 2:
+            x = x.unsqueeze(1)  # [B, L] -> [B, 1, L]
+        # 输入维度验证
+        assert x.dim() == 3, f"输入维度应为[B,C,L]，当前维度为{x.shape}"
+        # 新增动态门控处理
+        x = self.dynamic_gate(x)  # [B, C, L]
+
         # TCN特征提取
-        tcn_out = self.tcn(x)  # (batch, 8, seq)
-        tcn_features = tcn_out.transpose(1, 2)  # (batch, seq, 8)
+        base_feat = self.tcn(x).transpose(1, 2)  # [B, seq_len, channels]
 
-        # 分支处理
-        lstm_feat = self.lstm_branch(tcn_features)  # 投影到hidden_size
-        trans_feat = self.trans_branch(tcn_features)
-
-        # 注意力融合
-        combined = torch.cat([lstm_feat, trans_feat], dim=1)
-        # combined = torch.stack([lstm_feat, trans_feat], dim=1)
-        attn_weights = self.attention(combined)
-        fused = attn_weights[:, 0:1] * lstm_feat + attn_weights[:, 1:2] * trans_feat
-
+        # 后续流程保持不变
+        lstm_feat = self.lstm_branch(base_feat)
+        trans_feat = self.trans_branch(base_feat)
+        fused = self.channel_attn(lstm_feat, trans_feat)
         return self.fc(fused)
 
 
@@ -196,15 +267,16 @@ if __name__ == '__main__':
     }
 
     # 创建融合模型
-    model = FusionModel(tcn_params, hidden_size=64)
+    model = FusionModel(tcn_params, hidden_size=64, proj_dim=128)
     pytorch_model = PytorchModel(model)
 
     # 训练参数
+    name = 'TCN_lstm_transformer_CA128_2_8_128'
     epochs = 150
     batch_size = 256
     lr = 0.001
-    name = 'TCN_lstm_transformer_2_8_128phm'
-    patience = 30  # 早停参数
+    patience = 40 # 早停参数
+
 
     # 训练流程
     pytorch_model.train(train_set, val_set, test_set,
