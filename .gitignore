@@ -5,6 +5,10 @@
 /rulframework/model/__pycache__
 
 *.xml
+<<<<<<< Updated upstream
 /excel_result
 *.xlsx
 *.xlsx
+=======
+*.iml
+>>>>>>> Stashed changes
