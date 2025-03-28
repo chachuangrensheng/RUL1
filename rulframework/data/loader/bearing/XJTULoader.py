@@ -4,7 +4,9 @@ from typing import Dict, Union
 
 import pandas as pd
 from pandas import DataFrame
-
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import RobustScaler
 from rulframework.data.loader.bearing.ABCBearingLoader import ABCBearingLoader
 from rulframework.entity.Bearing import Fault
 
@@ -73,6 +75,21 @@ class XJTULoader(ABCBearingLoader):
         raw_data.rename(columns={'Horizontal_vibration_signals': 'Horizontal Vibration',
                                  'Vertical_vibration_signals': 'Vertical Vibration'},
                         inplace=True)
+
+        # 对每个振动通道进行独立归一化
+        # 水平振动归一化
+        # horizontal_scaler = MinMaxScaler()
+        # horizontal_scaler = StandardScaler()
+        horizontal_scaler = RobustScaler()
+        horizontal_data = raw_data['Horizontal Vibration'].values.reshape(-1, 1)
+        raw_data['Horizontal Vibration'] = horizontal_scaler.fit_transform(horizontal_data).flatten()
+
+        # 垂直振动归一化
+        # vertical_scaler = MinMaxScaler()
+        # vertical_scaler = StandardScaler()
+        vertical_scaler = RobustScaler()
+        vertical_data = raw_data['Vertical Vibration'].values.reshape(-1, 1)
+        raw_data['Vertical Vibration'] = vertical_scaler.fit_transform(vertical_data).flatten()
 
         return raw_data
 

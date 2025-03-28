@@ -22,6 +22,7 @@ from rulframework.metric.end2end.RMSE import RMSE
 from rulframework.util.Plotter import Plotter
 from rulframework.data.Dataset import Dataset
 from torch.utils.data import ConcatDataset, random_split
+from sklearn.preprocessing import MinMaxScaler
 from pytorch_tcn1 import TCN
 
 # nvidia-smi -l 0.2
@@ -69,7 +70,7 @@ class FeatureBranch(nn.Module):
                 dropout=0.1,
                 batch_first=True
             )
-            self.model = nn.TransformerEncoder(encoder_layer, num_layers=3)
+            self.model = nn.TransformerEncoder(encoder_layer, num_layers=2)
 
     def forward(self, x):
         x = self.input_proj(x)
@@ -192,10 +193,10 @@ def set_random_seed(seed):
 if __name__ == '__main__':
     # 训练参数
     Name = 'TCN_lstm_transformer_LOO_'
-    epochs = 2
-    batch_size = 128
+    epochs = 150
+    batch_size = 256
     lr = 0.001
-    patience = 30  # 早停参数
+    patience = 50  # 早停参数
     # 设置随机种子
     set_random_seed(42)
 
@@ -213,8 +214,13 @@ if __name__ == '__main__':
     }
 
     # 数据准备
+    # data_loader = XJTULoader(
+    #     'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
     data_loader = XJTULoader(
-        'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
+        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+
+    # data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
+
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
@@ -226,9 +232,26 @@ if __name__ == '__main__':
     # 预处理所有轴承数据并生成数据集
     all_datasets = {}
     for name in bearings:
+        # 加载原始数据
         bearing = data_loader(name, columns='Horizontal Vibration')
+        Plotter.raw(bearing)
+
+        # # 提取振动信号数据
+        # vibration_data = bearing.raw_data
+        #
+        # # 为当前轴承创建独立归一化器
+        # bearing_scaler = MinMaxScaler()
+        #
+        # # 执行归一化
+        # normalized_data = bearing_scaler.fit_transform(vibration_data)
+        #
+        # # 将归一化后的数据替换原始数据
+        # bearing.raw_data= normalized_data
+        # Plotter.raw(bearing)
+
         feature_extractor(bearing)
         stage_calculator(bearing)
+        Plotter.feature(bearing)
         generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
         dataset = generator(bearing)
         all_datasets[name] = dataset

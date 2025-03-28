@@ -1,3 +1,0 @@
-Performance evaluation of Bearing1_3Bearing1_3:
-	MAE: 0.2519
-	RMSE: 0.3173

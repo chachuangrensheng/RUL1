@@ -1,0 +1,3 @@
+Performance evaluation of TCN_lstm2_transformer3_CA128_2_8_128Bearing1_1:
+	MAE: 0.0156
+	RMSE: 0.0295

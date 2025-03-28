@@ -54,7 +54,7 @@ class FeatureBranch(nn.Module):
             self.model = nn.LSTM(
                 input_size=hidden_size,
                 hidden_size=hidden_size,
-                num_layers=2,
+                num_layers=1,
                 batch_first=True
             )
         elif branch_type == "Transformer":
@@ -188,8 +188,11 @@ def set_random_seed(seed):
 
 if __name__ == '__main__':
     # 数据准备
+    # data_loader = XJTULoader(
+    #     'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
     data_loader = XJTULoader(
-        'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
+        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+
     # data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
     # feature_extractor = FeatureExtractor(KurtosisProcessor(data_loader.continuum))
@@ -228,7 +231,7 @@ if __name__ == '__main__':
     pytorch_model = PytorchModel(model)
 
     # 训练参数
-    name = 'TCN_lstm_transformer_CA128_2_8_128'
+    name = 'TCN_lstm2_transformer3_CA128_2_8_128'
     epochs = 150
     batch_size = 256
     lr = 0.001
