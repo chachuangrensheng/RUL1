@@ -93,7 +93,7 @@ def set_random_seed(seed):
 if __name__ == '__main__':
     # 定义 数据加载器、特征提取器、fpt计算器、eol计算器
     data_loader = XJTULoader(
-        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+        'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
 
     feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()

@@ -26,6 +26,7 @@ if __name__ == '__main__':
     #     Logger.info(str(bearing))
 
     bearing = data_loader("Bearing1_1", 'Horizontal Vibration')
+    Plotter.raw(bearing)
     feature_extractor(bearing)
     stage_calculator(bearing)
     Plotter.feature(bearing)

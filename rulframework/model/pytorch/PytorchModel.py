@@ -146,62 +146,61 @@ class PytorchModel(ABCModel):
                         Logger.info(f"Early stopping triggered after {epoch + 1} epochs without improvement.")
                         break  # 提前终止训练
 
-        # 加载最佳模型
-        if val_set is not None:
-            self.model.load_state_dict(torch.load(save_path))
-            Logger.info("Loaded the best model based on validation loss.")
-
         Logger.info('Model training completed!!!')
+        # # 加载最佳模型
+        # if val_set is not None:
+        #     self.model.load_state_dict(torch.load(save_path))
+        #     Logger.info("Loaded the best model based on validation loss.")
 
-        # 加载最佳模型
-        self.model.load_state_dict(torch.load(save_path))
-
-        # 对训练集进行预测
-        Logger.info('Start predicting on training set...')
-        self.model.eval()
-        train_predictions = []
-        train_labels = []
-        train_loss_sum = 0.0
-        with torch.no_grad():
-            for inputs, labels in train_loader:
-                outputs = self.model(inputs)
-                loss = criterion(outputs, labels)
-                train_loss_sum += loss.item()
-                train_predictions.append(outputs.cpu().numpy())
-                train_labels.append(labels.cpu().numpy())
-        train_predictions = np.vstack(train_predictions)
-        train_labels = np.vstack(train_labels)
-        Logger.info(f"Training set loss: {train_loss_sum / len(train_loader):.10f}")
-
-        # 保存训练集预测结果到 .xlsx 文件
-        train_df = pd.DataFrame({
-            'Train_Predictions': train_predictions.flatten(),
-            'Train_Labels': train_labels.flatten()
-        })
-        train_df.to_excel(model_name + test_set.name + 'train_predictions.xlsx', index=False)
-        Logger.info('Training set predictions saved to train_predictions.xlsx')
-
-        # 对测试集进行预测
-        if test_set is not None:
-            Logger.info('Start predicting on test set...')
-            test_predictions = []
-            test_labels = []
-            test_loss_sum = 0.0
-            with torch.no_grad():
-                for inputs, labels in test_loader:
-                    outputs = self.model(inputs)
-                    loss = criterion(outputs, labels)
-                    test_loss_sum += loss.item()
-                    test_predictions.append(outputs.cpu().numpy())
-                    test_labels.append(labels.cpu().numpy())
-            test_predictions = np.vstack(test_predictions)
-            test_labels = np.vstack(test_labels)
-            Logger.info(f"Test set loss: {test_loss_sum / len(test_loader):.10f}")
-
-            # 保存测试集预测结果到 .xlsx 文件
-            test_df = pd.DataFrame({
-                'Test_Predictions': test_predictions.flatten(),
-                'Test_Labels': test_labels.flatten()
-            })
-            test_df.to_excel(model_name + test_set.name + 'test_predictions.xlsx', index=False)
-            Logger.info('Test set predictions saved to test_predictions.xlsx')
+        # # 加载最佳模型
+        # self.model.load_state_dict(torch.load(save_path))
+        #
+        # # 对训练集进行预测
+        # Logger.info('Start predicting on training set...')
+        # self.model.eval()
+        # train_predictions = []
+        # train_labels = []
+        # train_loss_sum = 0.0
+        # with torch.no_grad():
+        #     for inputs, labels in train_loader:
+        #         outputs = self.model(inputs)
+        #         loss = criterion(outputs, labels)
+        #         train_loss_sum += loss.item()
+        #         train_predictions.append(outputs.cpu().numpy())
+        #         train_labels.append(labels.cpu().numpy())
+        # train_predictions = np.vstack(train_predictions)
+        # train_labels = np.vstack(train_labels)
+        # Logger.info(f"Training set loss: {train_loss_sum / len(train_loader):.10f}")
+        #
+        # # 保存训练集预测结果到 .xlsx 文件
+        # train_df = pd.DataFrame({
+        #     'Train_Predictions': train_predictions.flatten(),
+        #     'Train_Labels': train_labels.flatten()
+        # })
+        # train_df.to_excel(model_name + test_set.name + 'train_predictions.xlsx', index=False)
+        # Logger.info('Training set predictions saved to train_predictions.xlsx')
+        #
+        # # 对测试集进行预测
+        # if test_set is not None:
+        #     Logger.info('Start predicting on test set...')
+        #     test_predictions = []
+        #     test_labels = []
+        #     test_loss_sum = 0.0
+        #     with torch.no_grad():
+        #         for inputs, labels in test_loader:
+        #             outputs = self.model(inputs)
+        #             loss = criterion(outputs, labels)
+        #             test_loss_sum += loss.item()
+        #             test_predictions.append(outputs.cpu().numpy())
+        #             test_labels.append(labels.cpu().numpy())
+        #     test_predictions = np.vstack(test_predictions)
+        #     test_labels = np.vstack(test_labels)
+        #     Logger.info(f"Test set loss: {test_loss_sum / len(test_loader):.10f}")
+        #
+        #     # 保存测试集预测结果到 .xlsx 文件
+        #     test_df = pd.DataFrame({
+        #         'Test_Predictions': test_predictions.flatten(),
+        #         'Test_Labels': test_labels.flatten()
+        #     })
+        #     test_df.to_excel(model_name + test_set.name + 'test_predictions.xlsx', index=False)
+        #     Logger.info('Test set predictions saved to test_predictions.xlsx')

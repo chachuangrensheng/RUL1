@@ -88,7 +88,7 @@ class FeatureBranch(nn.Module):
             self.model = nn.LSTM(
                 input_size=hidden_size,
                 hidden_size=hidden_size,
-                num_layers=1,
+                num_layers=2,
                 batch_first=True
             )
         elif branch_type == "Transformer":

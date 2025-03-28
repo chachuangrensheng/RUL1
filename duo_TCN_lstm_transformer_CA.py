@@ -20,8 +20,11 @@ from rulframework.metric.Evaluator import Evaluator
 from rulframework.metric.end2end.MAE import MAE
 from rulframework.metric.end2end.RMSE import RMSE
 from rulframework.util.Plotter import Plotter
+from rulframework.data.Dataset import Dataset
+from torch.utils.data import ConcatDataset, random_split
 from pytorch_tcn1 import TCN
 
+# nvidia-smi -l 0.2
 
 class SharedTCN(nn.Module):
     def __init__(self, tcn_params):
@@ -187,26 +190,12 @@ def set_random_seed(seed):
 
 
 if __name__ == '__main__':
-    # 数据准备
-    data_loader = XJTULoader(
-        'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
-    # data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
-    feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
-    # feature_extractor = FeatureExtractor(KurtosisProcessor(data_loader.continuum))
-    fpt_calculator = ThreeSigmaFPTCalculator()
-    eol_calculator = NinetyThreePercentRMSEoLCalculator()
-    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
-    bearing = data_loader("Bearing1_1", columns='Horizontal Vibration')
-    Plotter.raw(bearing)
-    feature_extractor(bearing)
-    stage_calculator(bearing)
-    Plotter.feature(bearing)
-
-    generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
-    data_set = generator(bearing)
-    train_set, test_set = data_set.split(0.7)
-    val_set, test_set = test_set.split(0.33)
-
+    # 训练参数
+    Name = 'TCN_lstm_transformer_LOO_'
+    epochs = 2
+    batch_size = 128
+    lr = 0.001
+    patience = 30  # 早停参数
     # 设置随机种子
     set_random_seed(42)
 
@@ -223,31 +212,81 @@ if __name__ == '__main__':
         'use_skip_connections': True
     }
 
-    # 创建融合模型
-    model = FusionModel(tcn_params, hidden_size=64, proj_dim=128)
-    pytorch_model = PytorchModel(model)
+    # 数据准备
+    data_loader = XJTULoader(
+        'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
+    feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
+    fpt_calculator = ThreeSigmaFPTCalculator()
+    eol_calculator = NinetyThreePercentRMSEoLCalculator()
+    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
 
-    # 训练参数
-    name = 'TCN_lstm_transformer_CA128_2_8_128'
-    epochs = 150
-    batch_size = 256
-    lr = 0.001
-    patience = 30 # 早停参数
+    # 轴承列表
+    bearings = ['Bearing1_1', 'Bearing1_2', 'Bearing1_3', 'Bearing1_4', 'Bearing1_5']
+
+    # 预处理所有轴承数据并生成数据集
+    all_datasets = {}
+    for name in bearings:
+        bearing = data_loader(name, columns='Horizontal Vibration')
+        feature_extractor(bearing)
+        stage_calculator(bearing)
+        generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
+        dataset = generator(bearing)
+        all_datasets[name] = dataset
+
+    # 留一法交叉验证
+    results = []
+    for i in range(len(bearings)):
+        test_name = bearings[i]
+        train_names = [name for j, name in enumerate(bearings) if j != i]
+
+        # 使用自定义Dataset的append方法合并训练集
+        combined_train = Dataset()  # 创建空数据集
+        for name in train_names:
+            combined_train.append(all_datasets[name])  # 追加每个训练轴承的数据
+        # train_datasets = [all_datasets[name] for name in train_names]
+        # combined_train = ConcatDataset(train_datasets)
+
+        # 划分训练集和验证集 (80%训练, 20%验证)
+        # train_size = int(0.8 * len(combined_train))
+        # val_size = len(combined_train) - train_size
+        # train_subset, val_subset = random_split(combined_train, [train_size, val_size])
+        train_subset, val_subset = combined_train.split(0.8)
+        test_set = all_datasets[test_name]
+
+        # 初始化新模型
+        model = FusionModel(tcn_params, hidden_size=64, proj_dim=128)
+        pytorch_model = PytorchModel(model)
+
+        # 训练模型
+        pytorch_model.train(train_subset, val_subset, None,  # 测试集独立
+                            epochs=epochs,
+                            batch_size=batch_size,
+                            lr=lr,
+                            model_name=Name+test_name,
+                            patience=patience)
+
+        # 绘制训练损失
+        Plotter.loss(pytorch_model)
+
+        # 测试评估
+        test_result = pytorch_model.test(test_set, batch_size=batch_size)
+        evaluator = Evaluator()
+        evaluator.add(MAE(), RMSE())
+        # 调用评估器并获取返回的评估结果字典
+        evaluation = evaluator(test_set, test_result, name=Name)
+        # 显式转换结果为浮点型
+        evaluation = {k: float(v) for k, v in evaluation.items()}  # 新增类型转换
+        results.append(evaluation)
+
+        # 绘制测试结果
+        Plotter.rul_end2end(test_set, test_result, is_scatter=False, name=Name)
+        del evaluator, evaluation
+
+    # 计算平均指标
+    mae_values = [res['MAE'] for res in results]
+    rmse_values = [res['RMSE'] for res in results]
+    print(f'LOO Cross-Validation Results:')
+    print(f'Average MAE: {np.mean(mae_values):.4f}')
+    print(f'Average RMSE: {np.mean(rmse_values):.4f}')
 
 
-    # 训练流程
-    pytorch_model.train(train_set, val_set, test_set,
-                        epochs=epochs,
-                        batch_size=batch_size,
-                        lr=lr,
-                        model_name=name,
-                        patience=patience)
-
-    # 可视化与评估
-    Plotter.loss(pytorch_model)
-    result = pytorch_model.test(test_set, batch_size=batch_size)
-    Plotter.rul_end2end(test_set, result, is_scatter=False, name=name)
-
-    evaluator = Evaluator()
-    evaluator.add(MAE(), RMSE())
-    evaluator(test_set, result, name=name)

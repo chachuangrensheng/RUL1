@@ -91,37 +91,38 @@ class Dataset:
         :param ratio:
         :return:
         """
-        # num_samples = self.__x.shape[0]
-        # indices = np.random.permutation(num_samples)
-        #
-        # train_size = int(ratio * num_samples)
-        # upper_indices = indices[:train_size]
-        # lower_indices = indices[train_size:]
-        # upper = Dataset(self.__x[upper_indices], self.__y[upper_indices], self.__z[upper_indices],
-        #                 self.sub_label_map, self.name)
-        # lower = Dataset(self.__x[lower_indices], self.__y[lower_indices], self.__z[lower_indices],
-        #                 self.sub_label_map, self.name)
-
-
+        # 按顺序划分
         num_samples = self.__x.shape[0]
-
-        # 随机打乱索引
         indices = np.random.permutation(num_samples)
 
-        # 根据比例划分索引
         train_size = int(ratio * num_samples)
         upper_indices = indices[:train_size]
         lower_indices = indices[train_size:]
-
-        # 按照原始数据集中的顺序对索引排序
-        upper_indices.sort()
-        lower_indices.sort()
-
-        # 构造子数据集
         upper = Dataset(self.__x[upper_indices], self.__y[upper_indices], self.__z[upper_indices],
                         self.sub_label_map, self.name)
         lower = Dataset(self.__x[lower_indices], self.__y[lower_indices], self.__z[lower_indices],
                         self.sub_label_map, self.name)
+
+        # # 随机划分
+        # num_samples = self.__x.shape[0]
+        #
+        # # 随机打乱索引
+        # indices = np.random.permutation(num_samples)
+        #
+        # # 根据比例划分索引
+        # train_size = int(ratio * num_samples)
+        # upper_indices = indices[:train_size]
+        # lower_indices = indices[train_size:]
+        #
+        # # 按照原始数据集中的顺序对索引排序
+        # upper_indices.sort()
+        # lower_indices.sort()
+        #
+        # # 构造子数据集
+        # upper = Dataset(self.__x[upper_indices], self.__y[upper_indices], self.__z[upper_indices],
+        #                 self.sub_label_map, self.name)
+        # lower = Dataset(self.__x[lower_indices], self.__y[lower_indices], self.__z[lower_indices],
+        #                 self.sub_label_map, self.name)
 
         return upper, lower
     def add_sub_label(self, name: str, label_data: ndarray):

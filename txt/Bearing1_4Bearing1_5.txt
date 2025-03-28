@@ -1,0 +1,3 @@
+Performance evaluation of Bearing1_4Bearing1_5:
+	MAE: 0.5022
+	RMSE: 0.5493
