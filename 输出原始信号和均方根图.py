@@ -4,7 +4,8 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from rulframework.data.FeatureExtractor import FeatureExtractor
 from rulframework.data.processor.RMSProcessor import RMSProcessor
 from rulframework.data.loader.bearing.XJTULoader import XJTULoader
-# from rulframework.data.loader.bearing.PHM2012Loader import PHM2012Loader
+from rulframework.data.loader.bearing.PHM2012Loader import PHM2012Loader
+from rulframework.data.labeler.RulLabeler import RulLabeler
 from rulframework.data.stage.BearingStageCalculator import BearingStageCalculator
 from rulframework.data.stage.eol.NinetyThreePercentRMSEoLCalculator import NinetyThreePercentRMSEoLCalculator
 from rulframework.data.stage.fpt.ThreeSigmaFPTCalculator import ThreeSigmaFPTCalculator
@@ -21,19 +22,13 @@ if __name__ == '__main__':
     # feature_extractor = FeatureExtractor(KurtosisProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
-    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
-
-    # for bearing_name in data_loader:
-    #     bearing = data_loader(bearing_name, columns='Horizontal Vibration')
-    #     # bearing = data_loader(bearing_name)
-    #     feature_extractor(bearing)
-    #     # stage_calculator.calculate_state(bearing)
-    #     Plotter.feature(bearing, is_staged=False)
-    #     Logger.info(str(bearing))
+    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, 2048)
 
     bearing = data_loader("Bearing1_1", 'Horizontal Vibration')
     Plotter.raw(bearing)
     feature_extractor(bearing)
     stage_calculator(bearing)
-    Plotter.feature(bearing)
+    generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
+    data_set = generator(bearing)
+    Plotter.feature(bearing, y_data=data_set.y)
     Logger.info(str(bearing))

@@ -26,4 +26,14 @@ class RMSProcessor(ABCProcessor):
             window = source[start_idx:end_idx]
             target[i] = np.sqrt(np.mean(window ** 2))
 
+        # 新增：最大最小归一化处理
+        if len(target) == 0:
+            return target  # 处理空数组情况
+
+        min_rms, max_rms = np.min(target), np.max(target)
+        if max_rms > min_rms:
+            target = (target - min_rms) / (max_rms - min_rms)
+        else:
+            target[:] = 0.0  # 当所有值相同时归零
+
         return target

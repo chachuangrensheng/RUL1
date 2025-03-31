@@ -4,6 +4,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.model_selection import KFold
 import numpy as np
 import random
 from rulframework.data.FeatureExtractor import FeatureExtractor
@@ -20,13 +21,10 @@ from rulframework.metric.Evaluator import Evaluator
 from rulframework.metric.end2end.MAE import MAE
 from rulframework.metric.end2end.RMSE import RMSE
 from rulframework.util.Plotter import Plotter
+from rulframework.system.Logger import Logger
 from rulframework.data.Dataset import Dataset
-from torch.utils.data import ConcatDataset, random_split
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import StandardScaler
 from pytorch_tcn1 import TCN
 
-# nvidia-smi -l 0.2
 
 class SharedTCN(nn.Module):
     def __init__(self, tcn_params):
@@ -59,7 +57,7 @@ class FeatureBranch(nn.Module):
             self.model = nn.LSTM(
                 input_size=hidden_size,
                 hidden_size=hidden_size,
-                num_layers=2,
+                num_layers=1,
                 batch_first=True
             )
         elif branch_type == "Transformer":
@@ -71,7 +69,7 @@ class FeatureBranch(nn.Module):
                 dropout=0.1,
                 batch_first=True
             )
-            self.model = nn.TransformerEncoder(encoder_layer, num_layers=2)
+            self.model = nn.TransformerEncoder(encoder_layer, num_layers=1)
 
     def forward(self, x):
         x = self.input_proj(x)
@@ -192,12 +190,32 @@ def set_random_seed(seed):
 
 
 if __name__ == '__main__':
-    # 训练参数
-    Name = 'TCN_lstm_transformer_LOO_'
-    epochs = 150
-    batch_size = 256
-    lr = 0.001
-    patience = 30  # 早停参数
+    # 数据准备
+    # data_loader = XJTULoader(
+    #     'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
+    # data_loader = XJTULoader(
+    #     'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+
+    data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
+
+    feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
+    # feature_extractor = FeatureExtractor(KurtosisProcessor(data_loader.continuum))
+    fpt_calculator = ThreeSigmaFPTCalculator()
+    eol_calculator = NinetyThreePercentRMSEoLCalculator()
+    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
+    bearing = data_loader("Bearing1_4", columns='Horizontal Vibration')
+    Plotter.raw(bearing)
+    feature_extractor(bearing)
+    stage_calculator(bearing)
+
+
+    generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
+    data_set = generator(bearing)
+    Plotter.feature(bearing, y_data=data_set.y)
+    # 初始化K折交叉验证 (K=5)
+    kf = KFold(n_splits=5, shuffle=False)
+    fold_results = []
+
     # 设置随机种子
     set_random_seed(42)
 
@@ -214,119 +232,137 @@ if __name__ == '__main__':
         'use_skip_connections': True
     }
 
-    # 数据准备
-    # data_loader = XJTULoader(
-    #     'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
-    data_loader = XJTULoader(
-        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+    # 创建融合模型
+    model = FusionModel(tcn_params, hidden_size=64, proj_dim=128)
 
-    # data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
 
-    feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
-    fpt_calculator = ThreeSigmaFPTCalculator()
-    eol_calculator = NinetyThreePercentRMSEoLCalculator()
-    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
+    # 训练参数
+    name = 'bearing1_4_jiao_TCN_lstm_transformer_CA'
+    epochs = 150
+    batch_size = 256
+    lr = 0.001
+    patience = 50  # 早停参数
 
-    # 轴承列表
-    bearings = ['Bearing1_1', 'Bearing1_2', 'Bearing1_3', 'Bearing1_4', 'Bearing1_5']
+    # 在交叉验证循环外初始化存储所有预测结果的容器
+    all_true = []
+    all_pred = []
+    fold_boundaries = []  # 记录每个fold验证集的起始位置
 
-    # 预处理所有轴承数据并生成数据集
-    all_datasets = {}
-    for name in bearings:
-        # 加载原始数据
-        bearing = data_loader(name, columns='Horizontal Vibration')
-        Plotter.raw(bearing)
+    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(data_set.x)):
+        Logger.info(f"========== Processing Fold {fold_idx + 1}/5 ==========")
 
-        # # 提取振动信号数据
-        # vibration_data = bearing.raw_data
-        #
-        # # 为当前轴承创建独立归一化器
-        # bearing_scaler = MinMaxScaler()
-        #
-        # # 执行归一化
-        # normalized_data = bearing_scaler.fit_transform(vibration_data)
-        #
-        # # 将归一化后的数据替换原始数据
-        # bearing.raw_data= normalized_data
-        # Plotter.raw(bearing)
+        # 分割当前fold的数据
+        x_train = data_set.x[train_idx]
+        y_train = data_set.y[train_idx]
+        z_train = data_set.z[train_idx]  # 新增z的分割
+        x_val = data_set.x[val_idx]
+        y_val = data_set.y[val_idx]
+        z_val = data_set.z[val_idx]  # 新增z的分割
 
-        feature_extractor(bearing)
-        stage_calculator(bearing)
-        Plotter.feature(bearing)
-        generator = RulLabeler(2048, is_from_fpt=False, is_rectified=True)
-        # generator = RulLabeler(2048, is_from_fpt=True, is_rectified=False)
-        dataset = generator(bearing)
-        all_datasets[name] = dataset
+        # 创建当前fold的训练集和验证集
+        train_fold = Dataset(x_train, y_train, z_train)  # 同时传入x,y,z
+        val_fold = Dataset(x_val, y_val, z_val, name=f"Fold{fold_idx}_Val" )
 
-    # 留一法交叉验证
-    results = []
-    for i in range(len(bearings)):
-        test_name = bearings[i]
-        train_names = [name for j, name in enumerate(bearings) if j != i]
+        # 初始化新的模型（确保每个fold独立）
+        pytorch_model = PytorchModel(model)  # 使用原始模型参数
 
-        # 使用自定义Dataset的append方法合并训练集
-        combined_train = Dataset()  # 创建空数据集
-        for name in train_names:
-            combined_train.append(all_datasets[name])  # 追加每个训练轴承的数据
+        # 训练当前fold的模型
+        pytorch_model.train(
+            train_set=train_fold,
+            val_set=val_fold,  # 验证集来自交叉验证划分
+            test_set=None,  # 不传入测试集
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=lr,
+            model_name=f"{name}_fold{fold_idx}",
+            patience=patience
+        )
 
-        # # 1. 从训练集计算标准化参数
-        # scaler = StandardScaler().fit(combined_train.x)
-        #
-        #
-        # # 2. 定义标准化函数
-        # def normalize_dataset(dataset):
-        #     # 标准化特征x，保持y和z不变
-        #     return Dataset(
-        #         x=scaler.transform(dataset.x),
-        #         y=dataset.y,
-        #         z=dataset.z,
-        #         sub_label_map=dataset.sub_label_map,
-        #         name=dataset.name
-        #     )
-        #
-        #
-        # # 3. 应用标准化
-        # combined_train_norm = normalize_dataset(combined_train)
-        # test_set_norm = normalize_dataset(all_datasets[test_name])
+        # 加载当前fold的最佳模型
+        best_model_path = os.path.join("pth", f"{name}_fold{fold_idx}best_model.pth")
+        pytorch_model.model.load_state_dict(torch.load(best_model_path))
 
-        # 4. 数据集划分
-        train_subset, val_subset = combined_train.split(0.8)
-        test_set = all_datasets[test_name]
+        # 在验证集上评估当前模型性能
+        result = pytorch_model.test(val_fold, batch_size=batch_size)
 
-        # 初始化新模型
-        model = FusionModel(tcn_params, hidden_size=64, proj_dim=128)
-        pytorch_model = PytorchModel(model)
 
-        # 训练模型
-        pytorch_model.train(train_subset, val_subset, None,  # 测试集独立
-                            epochs=epochs,
-                            batch_size=batch_size,
-                            lr=lr,
-                            model_name=Name+test_name,
-                            patience=patience)
+        # 记录当前fold的验证结果
+        all_true.append(val_fold.y.squeeze())  # 假设y是二维数组，压缩为1维
+        all_pred.append( result.outputs.squeeze())  # 强制转为1维数组
 
-        # 绘制训练损失
-        Plotter.loss(pytorch_model)
+        # 记录当前fold验证集的起始索引（用于绘图分界线）
+        fold_start = len(np.concatenate(all_true[:-1])) if fold_idx > 0 else 0  # 计算累积长度
+        fold_boundaries.append(fold_start)
 
-        # 测试评估
-        test_result = pytorch_model.test(test_set, batch_size=batch_size)
+        # 记录评估指标
         evaluator = Evaluator()
         evaluator.add(MAE(), RMSE())
-        # 调用评估器并获取返回的评估结果字典
-        evaluation = evaluator(test_set, test_result, name=Name)
-        # 显式转换结果为浮点型
-        evaluation = {k: float(v) for k, v in evaluation.items()}  # 新增类型转换
-        results.append(evaluation)
+        metrics = evaluator(val_fold, result, name=f"{name}_fold{fold_idx}")
+        fold_results.append(metrics)
 
-        # 绘制测试结果
-        Plotter.rul_end2end(test_set, test_result, is_scatter=False, name=Name)
-        del evaluator, evaluation
-
-    # 计算平均指标
-    mae_values = [res['MAE'] for res in results]
-    rmse_values = [res['RMSE'] for res in results]
-    print(f'LOO Cross-Validation Results:')
-    print(f'Average MAE: {np.mean(mae_values):.4f}')
-    print(f'Average RMSE: {np.mean(rmse_values):.4f}')
+        # 可选：保存每个fold的训练过程可视化
+        Plotter.loss(pytorch_model)
+        Plotter.rul_end2end(val_fold, result, is_scatter=False, name=f"{name}_fold{fold_idx}")
 
 
+    # 计算交叉验证平均指标
+    final_mae = sum(float(fold['MAE']) for fold in fold_results) / len(fold_results)
+    final_rmse = sum(float(fold['RMSE']) for fold in fold_results) / len(fold_results)
+
+    # 保存评估指标于txt文件中
+    with open(f"{name}_cross_validation_results.txt", "w") as file:
+        file.write(f"Average MAE: {final_mae:.4f}\n")
+        file.write(f"Average RMSE: {final_rmse:.4f}\n")
+
+
+    Logger.info(f"\nK-Fold Cross Validation Final Results (MAE/RMSE):")
+    Logger.info(f"Average MAE: {final_mae:.4f}")
+    Logger.info(f"Average RMSE: {final_rmse:.4f}")
+
+    # 添加最后一个分界点（数据总长度）
+    fold_boundaries.append(len(np.concatenate(all_true)))
+
+    # 合并所有结果
+    combined_true = np.concatenate(all_true)
+    combined_pred = np.concatenate(all_pred)
+
+    # 将两个数组合并为两列
+    combined = np.column_stack((combined_true, combined_pred))
+
+    # 保存为CSV文件，设置表头和分隔符，并移除注释符号
+    np.savetxt(name + 'results.csv', combined, delimiter=',', header='true,pred', comments='')
+
+
+    # 生成对应的x轴坐标（保持原始顺序）
+    x_axis = np.arange(len(combined_true))
+
+    # 绘制合并后的结果图
+    Plotter.rul_end2end_combined(
+        true_rul=combined_true,
+        pred_rul=combined_pred,
+        x_axis=x_axis,
+        fold_boundaries=fold_boundaries,
+        fold_names=[f"Fold {i + 1}" for i in range(5)],
+        is_scatter=False,
+        name=name
+    )
+
+
+
+
+    # # 训练流程
+    # pytorch_model.train(train_set, val_set, test_set,
+    #                     epochs=epochs,
+    #                     batch_size=batch_size,
+    #                     lr=lr,
+    #                     model_name=name,
+    #                     patience=patience)
+    #
+    # # 可视化与评估
+    # Plotter.loss(pytorch_model)
+    # result = pytorch_model.test(test_set, batch_size=batch_size)
+    # Plotter.rul_end2end(test_set, result, is_scatter=False, name=name)
+    #
+    # evaluator = Evaluator()
+    # evaluator.add(MAE(), RMSE())
+    # evaluator(test_set, result, name=name)

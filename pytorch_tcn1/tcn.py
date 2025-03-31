@@ -439,7 +439,7 @@ class TCN(BaseTCN):
         self.fc = nn.Linear(2048, 4)  # 定义全连接层
         # 归一化层：对最后一个维度（4）进行归一化
         self.norm = nn.LayerNorm(4)  # 或使用 nn.BatchNorm1d(4)
-
+        # self.norm = nn.BatchNorm1d(8)
         if lookahead > 0:
             # Only lookahead of 0 is supported, parameter is kept for compatibility
             raise ValueError(

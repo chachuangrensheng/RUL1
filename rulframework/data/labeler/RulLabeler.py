@@ -34,9 +34,9 @@ class RulLabeler(ABCLabeler):
     def _label(self, bearing: Bearing) -> Dataset:
         # 只取了第一列 todo
         if self.is_from_fpt:
-            raw_data: ndarray = bearing.raw_data.iloc[bearing.stage_data.fpt_raw:, 0].values
+            raw_data: ndarray = bearing.raw_data.iloc[bearing.stage_data.fpt_raw:bearing.stage_data.eol_raw, 0].values
         else:
-            raw_data = bearing.raw_data.values
+            raw_data = bearing.raw_data.iloc[:bearing.stage_data.eol_raw, 0].values
 
         total_length = len(raw_data)
         truncate_length = (total_length // self.interval) * self.interval

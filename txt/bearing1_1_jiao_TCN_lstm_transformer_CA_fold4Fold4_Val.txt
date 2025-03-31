@@ -1,0 +1,3 @@
+Performance evaluation of bearing1_1_jiao_TCN_lstm_transformer_CA_fold4Fold4_Val:
+	MAE: 0.0733
+	RMSE: 0.0872

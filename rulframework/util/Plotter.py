@@ -6,7 +6,33 @@ from scipy.stats import mode
 
 import numpy as np
 import seaborn as sns
+import matplotlib as mpl
 from matplotlib import pyplot as plt
+# 设置全局字体（优先级从高到低）
+plt.rcParams['font.sans-serif'] = [
+    'SimSun',        # 中文首选宋体
+    'Times New Roman',  # 英文首选Times New Roman
+]
+# 设置数学公式字体（LaTeX风格）
+plt.rcParams['mathtext.fontset'] = 'stix'  # 使用与Times New Roman协调的数学字体
+
+# 解决负号显示问题
+plt.rcParams['axes.unicode_minus'] = False
+
+# 强制将文字转为路径（避免字体依赖）
+plt.rcParams['svg.fonttype'] = 'path'  # 添加这行到绘图前
+
+# 同时建议调整以下参数保持协调
+plt.rcParams.update({
+    'axes.titlesize': 9,    # 标题字号
+    'axes.labelsize': 9,    # 坐标轴标签字号
+    'xtick.labelsize': 8,   # X轴刻度字号（建议比标签小1pt）
+    'ytick.labelsize': 8,   # Y轴刻度字号
+    'legend.fontsize': 8    # 图例字号
+})
+# from pyemf import EMF
+# import matplotlib.pyplot as plt
+import subprocess
 
 from rulframework.data.Dataset import Dataset
 from rulframework.entity.ABCEntity import ABCEntity
@@ -90,10 +116,10 @@ class Plotter:
         :param eol:
         :return:
         """
-        plt.plot(np.arange(fpt + 1), data[:fpt + 1], label='normal stage', color=Plotter.__COLOR_NORMAL_STAGE)
-        plt.plot(np.arange(eol - fpt + 1) + fpt, data[fpt:eol + 1], label='degeneration stage',
+        plt.plot(np.arange(fpt + 1), data[:fpt + 1], label='正常期', color=Plotter.__COLOR_NORMAL_STAGE)
+        plt.plot(np.arange(eol - fpt + 1) + fpt, data[fpt:eol + 1], label='退化期',
                  color=Plotter.__COLOR_DEGENERATION_STAGE)
-        plt.plot(np.arange(len(data[eol:])) + eol, data[eol:], label='failure stage',
+        plt.plot(np.arange(len(data[eol:])) + eol, data[eol:], label='失效期',
                  color=Plotter.__COLOR_FAILURE_STAGE)
 
     @staticmethod
@@ -140,7 +166,7 @@ class Plotter:
             Plotter.__staged(data, fpt, eol)
             # 画失效阈值
             plt.axhline(y=entity.stage_data.failure_threshold_feature, color=Plotter.__COLOR_FAILURE_THRESHOLD,
-                        label='failure threshold')
+                        label='失效阈值')
 
             # 绘制垂直线表示中间点
             plt.axvline(x=fpt, color='skyblue', linestyle='--')
@@ -158,21 +184,61 @@ class Plotter:
 
     @staticmethod
     @postprocess
-    def feature(entity: ABCEntity, is_staged=True, label_x='Time (Sample Index)', label_y='feature value'):
+    def feature(entity: ABCEntity, is_staged=True, label_x='采样序号',
+                label_y='均方根值', y_data=None):
         """
         绘画轴承特征图，当存在阶段数据且设为True时画阶段特征图
+        :param y_data: 需要叠加绘制的辅助数据（用黑色虚线表示）
         :return:
         """
-        plt.figure(figsize=Plotter.__SIZE, dpi=Plotter.__DPI)
+        # plt.figure(figsize=Plotter.__SIZE, dpi=Plotter.__DPI)
 
+        # 绘制主要特征数据
         Plotter.__feature(entity, is_staged)
 
-        legend = plt.legend(loc='upper left', bbox_to_anchor=(0, 1))
+        # 添加辅助数据绘制
+        if y_data is not None:
+            plt.plot(y_data, linestyle='--', color='black', label='RUL标签')
+
+        # 合并图例并调整位置
+        legend = plt.legend(
+            loc='lower left',  # 锚点定位在左下角
+            bbox_to_anchor=(0.02, 0.08),  # 向右移动2%轴宽，向上移动8%轴高
+            bbox_transform=plt.gca().transAxes,  # 使用坐标轴坐标系
+            frameon=True,
+            framealpha=0.8,
+            borderpad=0.5
+        )
         plt.gca().add_artist(legend)
         title = entity.name + ' Feature Values'
-        plt.title(title)
+        # plt.title(title)
         plt.xlabel(label_x)
         plt.ylabel(label_y)
+
+        # 添加EMF保存逻辑
+        def save_as_emf(title):
+            # 创建保存目录
+            os.makedirs("figures", exist_ok=True)
+
+            # 临时保存为SVG
+            svg_path = f"figures/{title}.svg"
+            plt.savefig(svg_path, format='svg', bbox_inches='tight', dpi=300)
+
+            # 转换为EMF
+            emf_path = f"figures/{title}.emf"
+            inkscape_path = r"C:\Program Files\Inkscape\bin\inkscape.exe"
+            subprocess.run([
+                inkscape_path,
+                svg_path,
+                "--export-filename", emf_path,
+                "--export-type", "emf"
+            ], check=True)
+
+            # 删除临时SVG文件
+            os.remove(svg_path)
+
+
+        save_as_emf(title)
         return title
 
     @staticmethod
@@ -217,51 +283,15 @@ class Plotter:
     def rul_end2end(test_set: Dataset, result: Result, is_scatter=True, label_x='Sample Index', label_y='RUL', name=None):
         plt.figure(figsize=Plotter.__SIZE, dpi=Plotter.__DPI)
 
-        # x = test_set.z.reshape(-1)
-        # y = result.outputs.reshape(-1)
-        #
-        # # 找到第二大的值在原数组中的下标（画标准线）
-        # unique_array = np.unique(test_set.y)
-        # max_val = unique_array[-1]
-        # second_val = unique_array[-2]
-        # max_index = np.where(test_set.y == second_val)[0][0]
-        # # 绘制标准线，并添加标签
-        # plt.plot([0, x[max_index], max(x)], [max_val, max_val, 0], color='red', label='Ideal RUL')
-        #
-        # if is_scatter:
-        #     plt.scatter(x, y, label='Our proposed model', s=1)
-        # else:
-        #     # 将数据按时间排序
-        #     sorted_indices = np.argsort(x)
-        #     # 重新排列矩阵的行
-        #     x = x[sorted_indices]
-        #     y = y[sorted_indices]
-        #     plt.plot(x, y, label='Our proposed model')
-        #
-        # title = 'RUL prediction result of ' + test_set.name
-        # plt.title(title)
-        # plt.xlabel(label_x)
-        # plt.ylabel(label_y)
-        # plt.legend()
-        # # 保存图像
-        # plt.savefig(name + title + '.png')
-
         x = np.arange(len(test_set.z))  # 样本索引
         y = result.outputs.reshape(-1)  # 模型预测值
 
-        # 找到第二大的值在原数组中的下标（画标准线）
-        unique_array = np.unique(test_set.y)
-        max_val = unique_array[-1]
-        second_val = unique_array[-2]
-        max_index = np.where(test_set.y == second_val)[0][0]
-
-        # 绘制标准线，并添加标签
-        plt.plot([0, max_index, len(x)], [max_val, max_val, 0], color='red', label='Ideal RUL')
+        # 直接绘制真实值作为标准线（不再找第二大值）
+        plt.plot(x, test_set.y, color='red', label='True RUL')  # 用真实值代替构造的折线
 
         if is_scatter:
-            plt.scatter(x, y,  color='green', label='Our proposed model', s=1)
+            plt.scatter(x, y, color='green', label='Our proposed model', s=1)
         else:
-            # 直接绘制折线图，不排序
             plt.plot(x, y, color='green', label='Our proposed model')
 
         title = 'RUL prediction result of ' + test_set.name
@@ -271,12 +301,126 @@ class Plotter:
         plt.legend()
 
         # 保存图像
-        save_dir = "result_imag"  # 指定保存目录名称
-        os.makedirs(save_dir, exist_ok=True)  # 自动创建目录
-        # 拼接完整保存路径
+        save_dir = "result_imag"
+        os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, name + title + '.png')
         plt.savefig(save_path)
 
+        # x = np.arange(len(test_set.z))  # 样本索引
+        # y = result.outputs.reshape(-1)  # 模型预测值
+        #
+        # # 找到第二大的值在原数组中的下标（画标准线）
+        # unique_array = np.unique(test_set.y)
+        # max_val = unique_array[-1]
+        # second_val = unique_array[-2]
+        # max_index = np.where(test_set.y == second_val)[0][0]
+        #
+        # # 绘制标准线，并添加标签
+        # plt.plot([0, max_index, len(x)], [max_val, max_val, 0], color='red', label='Ideal RUL')
+        #
+        # if is_scatter:
+        #     plt.scatter(x, y,  color='green', label='Our proposed model', s=1)
+        # else:
+        #     # 直接绘制折线图，不排序
+        #     plt.plot(x, y, color='green', label='Our proposed model')
+        #
+        # title = 'RUL prediction result of ' + test_set.name
+        # plt.title(name + title)
+        # plt.xlabel(label_x)
+        # plt.ylabel(label_y)
+        # plt.legend()
+        #
+        # # 保存图像
+        # save_dir = "result_imag"  # 指定保存目录名称
+        # os.makedirs(save_dir, exist_ok=True)  # 自动创建目录
+        # # 拼接完整保存路径
+        # save_path = os.path.join(save_dir, name + title + '.png')
+        # plt.savefig(save_path)
+
+        return title
+
+    @staticmethod
+    def rul_end2end_combined(true_rul, pred_rul, x_axis, fold_boundaries,
+                             fold_names, is_scatter, name):
+        # plt.figure(figsize=(15, 6))
+        # plt.figure(figsize=Plotter.__SIZE)
+
+        def save_as_emf(name):
+
+            # 保存为SVG
+            svg_path = f"figures/{name}_combined_validation.svg"
+            plt.savefig(svg_path, format='svg', bbox_inches='tight', dpi=300)
+
+            # 转换为EMF
+            emf_path = f"figures/{name}_combined_validation.emf"
+            inkscape_path = r"C:\Program Files\Inkscape\bin\inkscape.exe"  # 默认安装路径
+
+            # 修改subprocess调用方式
+            subprocess.run([
+                inkscape_path,
+                svg_path,
+                "--export-filename", emf_path,
+                "--export-type", "emf"
+            ], check=True)
+
+            # 删除临时SVG文件（可选）
+            import os
+            os.remove(svg_path)
+        # plt.figure(figsize=Plotter.__SIZE, dpi=Plotter.__DPI)
+
+        # 绘制真实值和预测曲线
+        plt.plot(x_axis, true_rul, label='真实值', color='black', linestyle='--')
+        plt.plot(x_axis, pred_rul, label='预测值', color='red', alpha=0.7)
+
+        def apply_alpha(color_hex, alpha, background_hex='#FFFFFF'):
+            """将颜色与背景色混合模拟透明度效果"""
+            color = mpl.colors.to_rgb(color_hex)
+            background = mpl.colors.to_rgb(background_hex)
+            blended = [alpha * c + (1 - alpha) * b for c, b in zip(color, background)]
+            return mpl.colors.to_hex(blended)
+
+        # 添加fold分界线
+        # 原始颜色定义
+        base_colors = ['#FFD700', '#00FF00', '#00BFFF', '#FF69B4', '#8A2BE2']  # 原色
+        alpha = 0.2  # 目标透明度
+        colors_with_alpha = [apply_alpha(c, alpha) for c in base_colors]  # 混合后的颜色
+
+        # 修改后的颜色块绘制（移除alpha参数）
+        for i in range(len(fold_boundaries) - 1):
+            start = fold_boundaries[i]
+            end = fold_boundaries[i + 1]
+            plt.axvspan(
+                start, end,
+                facecolor=colors_with_alpha[i % 5],  # 使用预计算颜色
+                # alpha=0.2  # 移除alpha参数
+            )
+            # 在颜色块上方中间位置标注fold编号
+            mid_x = (start + end) / 2
+            y_max = plt.ylim()[1]  # 获取当前y轴上限
+            plt.text(mid_x, y_max * 0.99,  # 调整到接近顶部的位置
+                     fold_names[i],
+                     ha='center', va='top',
+                     fontsize=12, color='black',
+                     # bbox=dict(facecolor='white', alpha=0.8, edgecolor='none')
+                     )  # 添加背景框提高可读性
+
+        plt.xlabel("采样序号", fontsize=16)
+        plt.ylabel("剩余寿命", fontsize=16)
+        title = f"Validation Results by Fold - {name}"
+        # plt.title(title)
+        plt.legend(
+            loc='lower left',  # 锚点定位在左下角
+            bbox_to_anchor=(0.05, 0),  # 向右移动5%的轴长度（相当于约20像素@600px宽图）
+            frameon=True,  # 显示图例边框
+            framealpha=0.8,  # 边框透明度
+            borderpad=0.5  # 边框内边距
+        )
+
+        # 保存图像
+        os.makedirs("figures", exist_ok=True)
+        save_as_emf(name)
+        # plt.savefig(f"figures/{name}_combined_validation.png", dpi=300)
+        # plt.close()
         return title
 
     @staticmethod
