@@ -20,5 +20,6 @@ class ThreeSigmaFPTCalculator(ABCFPTCalculator):
     def __mean_plus_3std(signal) -> int:
         mean_value = np.mean(signal)
         std_dev = np.std(signal)
-        result = mean_value + 3 * std_dev
+        result = mean_value + 4.625 * std_dev # XJTU-SY
+        # result = mean_value + 3 * std_dev # PHM2012
         return result

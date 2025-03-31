@@ -1,0 +1,2 @@
+Average MAE: 0.0024
+Average RMSE: 0.0029

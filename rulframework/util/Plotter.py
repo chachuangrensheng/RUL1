@@ -207,13 +207,14 @@ class Plotter:
             bbox_transform=plt.gca().transAxes,  # 使用坐标轴坐标系
             frameon=True,
             framealpha=0.8,
-            borderpad=0.5
+            borderpad=0.5,
+            fontsize=12
         )
         plt.gca().add_artist(legend)
         title = entity.name + ' Feature Values'
         # plt.title(title)
-        plt.xlabel(label_x)
-        plt.ylabel(label_y)
+        plt.xlabel(label_x, fontsize=16)
+        plt.ylabel(label_y, fontsize=16)
 
         # 添加EMF保存逻辑
         def save_as_emf(title):
@@ -413,7 +414,8 @@ class Plotter:
             bbox_to_anchor=(0.05, 0),  # 向右移动5%的轴长度（相当于约20像素@600px宽图）
             frameon=True,  # 显示图例边框
             framealpha=0.8,  # 边框透明度
-            borderpad=0.5  # 边框内边距
+            borderpad=0.5,  # 边框内边距
+            fontsize=12
         )
 
         # 保存图像

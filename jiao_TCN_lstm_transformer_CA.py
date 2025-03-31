@@ -193,16 +193,16 @@ if __name__ == '__main__':
     # 数据准备
     # data_loader = XJTULoader(
     #     'D:\桌面\数字孪生\剩余寿命预测\数据集\XJTU-SY_Bearing_Datasets\Data\XJTU-SY_Bearing_Datasets\XJTU-SY_Bearing_Datasets')
-    # data_loader = XJTULoader(
-    #     'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
+    data_loader = XJTULoader(
+        'C:/Users/Administrator/Desktop/zhiguo/数字孪生/剩余寿命预测/数据集/XJTU-SY_Bearing_Datasets/Data/XJTU-SY_Bearing_Datasets/XJTU-SY_Bearing_Datasets')
 
-    data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
+    # data_loader = PHM2012Loader('C:\\Users\\Administrator\\Desktop\\zhiguo\\数字孪生\\剩余寿命预测\\数据集\\PHM2012\\data')
 
-    feature_extractor = FeatureExtractor(RMSProcessor(data_loader.continuum))
+    feature_extractor = FeatureExtractor(RMSProcessor(2048))
     # feature_extractor = FeatureExtractor(KurtosisProcessor(data_loader.continuum))
     fpt_calculator = ThreeSigmaFPTCalculator()
     eol_calculator = NinetyThreePercentRMSEoLCalculator()
-    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, data_loader.continuum)
+    stage_calculator = BearingStageCalculator(fpt_calculator, eol_calculator, 2048)
     bearing = data_loader("Bearing1_4", columns='Horizontal Vibration')
     Plotter.raw(bearing)
     feature_extractor(bearing)
@@ -237,7 +237,7 @@ if __name__ == '__main__':
 
 
     # 训练参数
-    name = 'bearing1_4_jiao_TCN_lstm_transformer_CA'
+    name = 'bearing1_1_2_jiao_TCN_lstm_transformer_CA'
     epochs = 150
     batch_size = 256
     lr = 0.001
