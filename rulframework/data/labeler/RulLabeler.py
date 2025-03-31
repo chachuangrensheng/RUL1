@@ -36,7 +36,8 @@ class RulLabeler(ABCLabeler):
         if self.is_from_fpt:
             raw_data: ndarray = bearing.raw_data.iloc[bearing.stage_data.fpt_raw:bearing.stage_data.eol_raw, 0].values
         else:
-            raw_data = bearing.raw_data.iloc[:bearing.stage_data.eol_raw, 0].values
+            # raw_data = bearing.raw_data.iloc[:bearing.stage_data.eol_raw, 0].values
+            raw_data = bearing.raw_data.values
 
         total_length = len(raw_data)
         truncate_length = (total_length // self.interval) * self.interval
